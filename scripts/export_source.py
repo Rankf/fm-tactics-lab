@@ -13,6 +13,8 @@ TYPES = {'src': {'.py', '.js', '.css', '.html'},
          'scripts': {'.py'}, 'tests': {'.py'}, 'docs': {'.md'},
          'native': {'.cpp', '.h', '.manifest'}}
 NATIVE_JSON = {'native/profile_metadata.json', 'native/adapter_version.json'}
+SCREENSHOTS = {'docs/screenshots/tactics.png', 'docs/screenshots/players.png',
+               'docs/screenshots/results.png'}
 FORBIDDEN = {'engine_compat_profile.h', 'engine_compat_profile.json'}
 
 
@@ -20,6 +22,7 @@ def source_files(root=ROOT):
     root = Path(root)
     result = [root / name for name in TOP]
     result.extend(root / name for name in NATIVE_JSON)
+    result.extend(root / name for name in SCREENSHOTS)
     for directory, suffixes in TYPES.items():
         result.extend(path for path in (root / directory).rglob('*')
                       if path.is_file() and path.suffix in suffixes
@@ -35,6 +38,10 @@ def validate(root=ROOT):
             raise ValueError('Missing or symlinked public source: ' + str(path))
         if not path.resolve().is_relative_to(root.resolve()):
             raise ValueError('Source escapes release directory: ' + str(path))
+        if path.relative_to(root).as_posix() in SCREENSHOTS:
+            if not path.read_bytes().startswith(b'\x89PNG\r\n\x1a\n'):
+                raise ValueError('Expected PNG screenshot: ' + str(path))
+            continue
         text = path.read_text(encoding='utf-8-sig')
         # Public sources must not contain workstation paths or game code dumps.
         if re.search(r'[A-Za-z]:[\\/]+Users[\\/]|F:[\\/]+FmEngine', text, re.I):

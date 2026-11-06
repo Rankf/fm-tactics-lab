@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Add actual interface screenshots to both player guides.
+- Serve `engine-settings.js` from the static route allowlist so engine diagnostics and manual path selection initialize correctly. The published v1103.2 EXE is unchanged.
+
 ## v1103.2 — Public release
 
 - Publish FM Tactics Lab under MIT with Chinese and English player documentation.

@@ -509,7 +509,7 @@ class Handler(BaseHTTPRequestHandler):
                     name=parts[4]
                     if name not in [r['log']for r in job['runs']]:return self.send({'error':'日志不存在'},404)
                     return self.send((job['_dir']/name).read_bytes(),kind='application/x-ndjson; charset=utf-8')
-        known={'/team-bulk.js':'team-bulk.js','/desktop-workspace.js':'desktop-workspace.js','/match-events.js':'match-events.js','/desktop.js':'desktop.js','/desktop.css':'desktop.css','/':'index.html','/app.js':'app.js','/advanced.js':'advanced.js','/setpieces.js':'setpieces.js','/batch.js':'batch.js','/style.css':'style.css'}
+        known={'/engine-settings.js':'engine-settings.js','/team-bulk.js':'team-bulk.js','/desktop-workspace.js':'desktop-workspace.js','/match-events.js':'match-events.js','/desktop.js':'desktop.js','/desktop.css':'desktop.css','/':'index.html','/app.js':'app.js','/advanced.js':'advanced.js','/setpieces.js':'setpieces.js','/batch.js':'batch.js','/style.css':'style.css'}
         if path in known:
             name=known[path];kind={'html':'text/html','js':'text/javascript','css':'text/css'}[name.split('.')[-1]]
             return self.send((WEB/name).read_bytes(),kind=kind+'; charset=utf-8')

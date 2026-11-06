@@ -8,6 +8,14 @@ Import a tactic, configure both squads, run complete matches in batches, and com
 
 Use it to explore which formation suits your players, how pressing or role changes affect performance, and whether an advantage holds across repeated matches.
 
+## Interface preview
+
+Edit possession and out-of-possession formations, team instructions and player roles side by side.
+
+![Dual-phase tactical boards and team instructions](docs/screenshots/tactics.png)
+
+Screenshots show the current open-source edition with the included example players. The interface is in Chinese.
+
 ## How it works
 
 The tool loads the original match engine from your local FM27 installation. It supplies player and tactical inputs, then runs the original code for decisions, movement, passing, challenges, shooting and match rules until the match finishes naturally.
@@ -44,6 +52,8 @@ The EXE includes its Python runtime. Players do not need Python or a compiler. T
 
 Start with the included player inputs and choose each side's starting lineup. Both sides can be edited independently. In **球员属性** (Player Attributes), adjust abilities and positional familiarity. Export a full JSON setup to keep your experiment.
 
+![Player attributes and whole-squad editing](docs/screenshots/players.png)
+
 ### 2. Import or edit a tactic
 
 Open **战术板** (Tactics Board):
@@ -75,6 +85,10 @@ At the bottom, set the starting seed, matches per variant and worker count, then
 Open **实验结果** (Results) for batch summaries, averages and individual matches. Full mode includes player-event details. Export individual results as CSV to keep your own comparisons.
 
 Failed matches are listed separately. Aggregates use completed matches that passed validation.
+
+![Paired tactical comparison and native team statistics](docs/screenshots/results.png)
+
+Example: six completed matches per variant, showing the comparison, xG, shots, possession and passing statistics.
 
 ## Example: does stronger pressing help?
 
