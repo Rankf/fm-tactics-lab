@@ -1,0 +1,1 @@
+# This release uses the Python 3.12 standard library only.

@@ -1,0 +1,627 @@
+"""Loopback tactics editor: validated inputs -> original native match host."""
+from __future__ import annotations
+import argparse
+import base64
+import copy
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
+import hashlib
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
+import math
+import os
+from pathlib import Path
+import secrets
+import struct
+import subprocess
+import threading
+import time
+from urllib.parse import urlparse,parse_qs
+from fm27_simulator import inspect_log
+from fm27_batch import BatchRunner, worker_limits, own_child_processes
+from desktop_warm_batch import DesktopWarmRunner, inspect_saved_run
+BATCH_LIMITS=worker_limits()
+import fm27_setpieces as setpieces
+import fm27_phase_inputs as phase_inputs
+import fm27_profiles as profiles
+import fm27_fmf
+import fm27_match_events
+
+ROOT = Path(os.environ["FM27_ENGINE_ROOT"])
+WEB = Path(__file__).resolve().parent / 'tactics_ui'
+RUNS = Path(os.environ['FM27_DESKTOP_DATA']) / 'runs'
+RUNS.mkdir(parents=True,exist_ok=True)
+NATIVE = ROOT / 'fm27_native'
+import desktop_engine
+ENGINE_COMPATIBILITY = desktop_engine.initialize(ROOT)
+ENGINE_DLL_SHA256 = ENGINE_COMPATIBILITY['actual_dll_sha256']
+CATALOG = json.loads((WEB/'catalog.json').read_text(encoding='utf8'))
+phase_inputs.annotate(CATALOG)
+CATALOG['setpieces']=setpieces.CATALOG
+SNAPSHOT = json.loads((NATIVE/'editor_manual_default.json').read_text(encoding='utf8'))
+ADVANCED = json.loads((NATIVE/'editor_advanced_snapshot.json').read_text(encoding='utf8'))
+ROLE_MASK = 0xfffffffbf91fffff
+ROLES = {r['id']:r for r in CATALOG['roles']}
+POSITIONS = {p['id']:p for p in CATALOG['positions']}
+GROUPS = {g['id']:g for g in CATALOG['team_instructions']}
+TEAM_KNOWN_MASK=sum(1<<bit for bit in {o['native_bit']for g in GROUPS.values()for o in g['options']if o['native_bit']})
+PIS = {g['id']:g for g in CATALOG['player_instructions']}
+TAKER_KEYS=['penalties']+[f'{kind}_{direction}_{"foot"if kind in ("corners","wide_free_kicks")else "side"}'for kind in ('corners','direct_free_kicks','wide_free_kicks','deep_free_kicks','throw_ins')for direction in ('left','right')]
+POLICY_VERSION='1a080000'
+def unpack_oi(value):
+    return {'press':value&7,'mark':(value>>3)&7,'tackle':(value>>8)&7,'foot':(value>>11)&7,'personal':bool(value&0x80000)}
+def pack_oi(row):
+    return row['press']|(row['mark']<<3)|(row['tackle']<<8)|(row['foot']<<11)|(0x80000 if row['personal']else 0)
+OOP_MAP=[]
+for t in SNAPSHOT['teams']:
+    raw=bytes.fromhex(t['manager_tactical_hex'])
+    mapping=[i if v==255 else v for i,v in enumerate(raw[0x1fb4-0x2e0:0x1fb4-0x2e0+11])]
+    if sorted(mapping)!=list(range(11)):raise ValueError('fixture OOP map is not a permutation')
+    OOP_MAP.append(mapping)
+
+def defaults():
+    teams=[]
+    for side,t in enumerate(SNAPSHOT['teams']):
+        creator=bytes.fromhex(t['creator_hex']);bits=int.from_bytes(creator[:16],'little')
+        instructions={}
+        for g in GROUPS.values():
+            active=[o['id']for o in g['options'] if o['native_bit'] and bits>>o['native_bit']&1]
+            if len(active)>1:raise ValueError('ambiguous fixture team instruction')
+            instructions[str(g['id'])]=active[0] if active else next((o['id']for o in g['options'] if not o['native_bit']),g['options'][0]['id'])
+        phases=[]
+        for phase in range(2):
+            cells=[]
+            for i in range(11):
+                native_slot=OOP_MAP[side][i] if phase else i
+                h=t['tactical_slots'][phase][native_slot]
+                cell=bytes.fromhex(h);pos=struct.unpack_from('<I',cell)[0];flag=struct.unpack_from('<Q',cell,64)[0]&ROLE_MASK
+                role=next((r for r in ROLES.values() if r['phase']==phase and int(r['flags'])==flag),None)
+                if not role:raise ValueError(f'fixture role not in UI: {phase}:{flag}')
+                position=next(p['id']for p in POSITIONS.values() if p['mask']==pos)
+                pi=t['personal_instructions'][phase][native_slot];flags=int(pi['flags'])
+                values={str(g['id']):next((o['id']for o in g['options'] if o['id'] and flags>>o['id']&1),0)for g in PIS.values()}
+                cells.append({'position':position,'role':role['id'],'duty':str(struct.unpack_from('<Q',cell,64)[0]&~ROLE_MASK),'instructions':values,'target_player':pi['target_player'],'target_position':pi['target_position']})
+            phases.append(cells)
+        oi=ADVANCED['teams'][side]
+        positional={p['id']:unpack_oi(next((r['packed']for r in oi['opposition_positions']if r['position']==p['mask']),0x80000))for p in CATALOG['positions']}
+        teams.append({'name':['主队','客队'][side],'tactic_name':'','native_extra_team_bits':str(bits&~TEAM_KNOWN_MASK),'mentality':creator[0x25],'instructions':instructions,'lineup':list(range(11)),
+                      'opposition':{'players':[unpack_oi(v)for v in oi['opposition'][:SNAPSHOT['teams'][1-side]['count']]],'positions':positional},
+                      'captains':[],'takers':{k:[]for k in TAKER_KEYS},'setpieces':copy.deepcopy(setpieces.DEFAULTS[side]),
+                      'phases':phases,'players':[{'name':f'{["主","客"][side]}队球员 {p["index"]+1:02d}','native_id':p['id'],'attributes':p['attributes'],'native_profile':copy.deepcopy(profiles.CONTROLLED_START)}for p in t['players']]})
+    return {'schema':3,'rules':'game','fixture':'bundled_match_pkm','teams':teams}
+
+DEFAULT = defaults()
+def cell_policy(side,phase,index,cell):
+    native=OOP_MAP[side][index] if phase else index
+    raw=bytes.fromhex(SNAPSHOT['teams'][side]['tactical_slots'][phase][native])
+    duty=int(cell.get('duty',str(struct.unpack_from('<Q',raw,64)[0]&~ROLE_MASK)))
+    key=f'{phase}:{cell["position"]}:{cell["role"]}:{duty}'
+    return CATALOG['pi_policies'].get(key,{}).get(POLICY_VERSION,'1'*43)
+
+def role_options(cells,phase,position):
+    count=sum(bool(POSITIONS[c['position']]['mask']&16)for c in cells)
+    dm=sum(bool(POSITIONS[c['position']]['mask']&0x80)for c in cells)
+    return CATALOG['role_eligibility_context'][f'{3 if count>=3 else 0}:{int(dm==1)}'][position][phase]
+
+def team_conflicts(instructions):
+    active={next(o['native_bit']for o in GROUPS[int(g)]['options']if o['id']==v):int(g)for g,v in instructions.items()}
+    return [(active[a],active[b])for a,b in CATALOG['team_conflicting_bits']if a in active and b in active]
+def integer(value,low,high,label):
+    if type(value)is not int or not low<=value<=high:raise ValueError(f'{label}必须为 {low}–{high} 的整数')
+    return value
+
+def validate_scenario(data):
+    data=phase_inputs.unpack(data,CATALOG)
+    if isinstance(data,dict)and data.get('schema')==1:
+        # v1 indexed OOP entries by raw native cell; v2 indexes both phases by
+        # the same player slot. Preserve the actual native assignment on import.
+        data=copy.deepcopy(data)
+        try:
+            if len(data['teams'])!=2:raise ValueError('旧版名单不完整')
+            for side,t in enumerate(data['teams']):
+                old=t['phases'][1]
+                if len(old)!=11:raise ValueError('旧版无球阵型不完整')
+                t['phases'][1]=[old[n]for n in OOP_MAP[side]]
+        except (KeyError,IndexError,TypeError):raise ValueError('旧版方案格式无效')
+        data['schema']=2
+    if isinstance(data,dict)and data.get('schema')==2:
+        data=copy.deepcopy(data);data.update(schema=3,rules='lab')
+    if not isinstance(data,dict)or data.get('schema')!=3 or data.get('fixture')!='bundled_match_pkm':raise ValueError('方案格式或比赛样本不匹配')
+    if data.get('rules')not in ('game','lab'):raise ValueError('未知角色限制模式')
+    teams=data.get('teams')
+    if not isinstance(teams,list)or len(teams)!=2:raise ValueError('必须包含两支球队')
+    # Normalize to a bounded, typed document. No address, path, native offset or code input.
+    normalized=copy.deepcopy(DEFAULT)
+    normalized['rules']=data['rules']
+    for side,t in enumerate(teams):
+        n=normalized['teams'][side];base=DEFAULT['teams'][side]
+        n['name']=str(t.get('name',''))[:40]
+        n['tactic_name']=str(t.get('tactic_name',''))[:120]
+        try:extra=int(t.get('native_extra_team_bits',base['native_extra_team_bits']))
+        except (TypeError,ValueError):raise ValueError('附加原生战术选项格式无效')
+        if extra<0 or extra>=1<<128 or extra&TEAM_KNOWN_MASK:raise ValueError('附加原生选项越界或与已命名指令重复')
+        n['native_extra_team_bits']=str(extra)
+        n['mentality']=integer(t['mentality'],1,7,'比赛心态')
+        if 'roster_size'in t:n['roster_size']=integer(t['roster_size'],11,len(base['players']),'比赛名单人数')
+        for g in GROUPS.values():
+            val=t['instructions'].get(str(g['id']),base['instructions'][str(g['id'])]);integer(val,0,0xffffffff,'球队指令')
+            if val not in [o['id']for o in g['options']]:raise ValueError('未知球队指令选项')
+            n['instructions'][str(g['id'])]=val
+        if data['rules']=='game'and team_conflicts(n['instructions']):raise ValueError('同一侧的内套与外套互斥，请将其中一项恢复标准')
+        if not isinstance(t['players'],list)or len(t['players'])!=len(base['players']):raise ValueError('名单长度不匹配')
+        for i,p in enumerate(t['players']):
+            if p.get('native_id')!=base['players'][i]['native_id']:raise ValueError('球员顺序或标识不匹配')
+            if len(p['attributes'])!=69:raise ValueError('每名球员必须包含69项原生输入')
+            n['players'][i]['name']=str(p['name'])[:48]
+            n['players'][i]['attributes']=[integer(v,0 if a<15 else 1,20 if a<15 else 100,'属性')for a,v in enumerate(p['attributes'])]
+            n['players'][i]['native_profile']=profiles.normalize(p.get('native_profile',{}));n['players'][i]['native_profile'].update(profiles.CONTROLLED_START)
+            if 'source_uid'in p:n['players'][i]['source_uid']=integer(p['source_uid'],0,0xffffffff,'源球员UID')
+        if len(t['lineup'])!=11 or len(set(t['lineup']))!=11:raise ValueError('首发必须是11名不同球员')
+        n['lineup']=[integer(i,0,len(base['players'])-1,'首发球员')for i in t['lineup']]
+        caps=t.get('captains',base['captains'])
+        if not isinstance(caps,list)or len(caps)>len(base['players'])or len(set(caps))!=len(caps):raise ValueError('队长优先顺序无效')
+        n['captains']=[integer(i,0,len(base['players'])-1,'队长')for i in caps]
+        n['setpieces']=setpieces.normalize(t.get('setpieces',base['setpieces']),side,len(base['players']))
+        takers=t.get('takers',base['takers'])
+        if isinstance(takers,dict)and set(takers)=={k.replace('_side','_foot')for k in TAKER_KEYS}:
+            takers={k:takers[k.replace('_side','_foot')]for k in TAKER_KEYS}
+        if not isinstance(takers,dict)or set(takers)!=set(TAKER_KEYS):raise ValueError('定位球主罚名单分类不符')
+        for k in TAKER_KEYS:
+            values=takers[k]
+            if not isinstance(values,list)or len(values)>len(base['players'])or any(type(v)is not int for v in values)or len(set(values))!=len(values):raise ValueError('定位球主罚顺序无效')
+            n['takers'][k]=[integer(v,0,len(base['players'])-1,'主罚球员')for v in values]
+        opp=t.get('opposition',base['opposition'])
+        if len(opp['players'])!=len(base['opposition']['players']):raise ValueError('针对性指令的对方名单长度不符')
+        def oi_row(row):
+            result={k:integer(row[k],0,maximum,'针对性指令')for k,maximum in [('press',2),('mark',2),('tackle',3),('foot',3)]}
+            if type(row['personal'])is not bool:raise ValueError('针对性指令模式无效')
+            result['personal']=row['personal'];return result
+        n['opposition']['players']=[oi_row(r)for r in opp['players']]
+        n['opposition']['positions']={p:oi_row(opp['positions'][p])for p in POSITIONS}
+        if len(t['phases'])!=2:raise ValueError('必须配置有球和无球阶段')
+        for phase,cells in enumerate(t['phases']):
+            if len(cells)!=11:raise ValueError('每个阶段必须有11个位置')
+            positions=[c['position']for c in cells]
+            if positions.count('GK')!=1 or positions[0]!='GK' or len(set(positions))!=11:raise ValueError('每个阶段必须有一名门将且位置不能重复；0号位置为门将')
+            for i,c in enumerate(cells):
+                if c['position']not in POSITIONS or c['role']not in ROLES or ROLES[c['role']]['phase']!=phase:raise ValueError('未知位置或阶段角色')
+                ncell=n['phases'][phase][i];ncell['position']=c['position'];ncell['role']=c['role']
+                if data['rules']=='game'and c['role']not in role_options(cells,phase,c['position']):raise ValueError('该位置或当前阵型不可使用所选原版角色')
+                original=base['phases'][phase][i]
+                duty=str(c.get('duty','0'if c['role']!=original['role']else original['duty']))
+                if duty not in ('0','2097152','4194304','8388608','33554432','67108864','17179869184'):raise ValueError('未知角色职责位')
+                ncell['duty']=duty
+                policy=cell_policy(side,phase,i,ncell)
+                for g in PIS.values():
+                    v=c['instructions'].get(str(g['id']))
+                    if type(v)is not int or v not in [o['id']for o in g['options']]:raise ValueError('未知个人指令选项')
+                    ncell['instructions'][str(g['id'])]=v
+                    if data['rules']=='game'and v and (g['phase']!=phase or policy[v]!='0'):raise ValueError(f'{g["label"]}被当前角色限制；请使用角色预设或更换角色')
+                target=integer(c['target_player'],0,255,'盯防球员')
+                if target!=255 and target>=len(DEFAULT['teams'][1-side]['players']):raise ValueError('盯防球员不存在')
+                ncell['target_player']=target
+                if c['target_position']not in [0]+[p['mask']for p in POSITIONS.values()]:raise ValueError('盯防位置不存在')
+                ncell['target_position']=c['target_position']
+                if ncell['instructions']['14']==34 and target==255:raise ValueError('指定盯防需要选择对方名单序号')
+                if ncell['instructions']['14']==35 and not ncell['target_position']:raise ValueError('指定盯防需要选择位置')
+    return normalized
+
+def encode_scenario(data,absolute=False):
+    data=validate_scenario(data);records=[]
+    for side,t in enumerate(data['teams']):
+        base=DEFAULT['teams'][side];records.append((10,side,0,0,1))
+        if 'roster_size'in t:records.append((17,side,0,0,t['roster_size']))
+        records.extend(setpieces.encode(t['setpieces'],side))
+        records.append((13,side,0,0,int(data['rules']=='game')))
+        records.extend((12,side,i,0,native)for i,native in enumerate(OOP_MAP[side]))
+        for i,p in enumerate(t['players']):
+            if i>=t.get('roster_size',len(t['players'])):continue
+            for key,value in p.get('native_profile',{}).items():records.append((15,side,i,profiles.FIELDS[key][0],value))
+            for a,v in enumerate(p['attributes']):
+                if absolute or v!=base['players'][i]['attributes'][a]:records.append((1,side,i,a,v))
+        for g,v in t['instructions'].items():
+            if absolute or v!=base['instructions'][g]:records.append((2,side,int(g),0,v))
+        extra=int(t.get('native_extra_team_bits',base['native_extra_team_bits']));old_extra=int(base['native_extra_team_bits'])
+        for bit in range(128):
+            if not(TEAM_KNOWN_MASK>>bit&1)and(absolute or(extra^old_extra)>>bit&1):records.append((60,side,bit,0,extra>>bit&1))
+        if absolute or t['mentality']!=base['mentality']:records.append((3,side,0,0,t['mentality']))
+        for phase,cells in enumerate(t['phases']):
+            for i,c in enumerate(cells):
+                b=base['phases'][phase][i];slot=phase*16+(OOP_MAP[side][i] if phase else i)
+                if absolute or c['role']!=b['role']:
+                    flags=int(ROLES[c['role']]['flags']);records.append((4,side,slot,flags>>32,flags&0xffffffff))
+                if absolute or c['position']!=b['position']:records.append((5,side,slot,0,POSITIONS[c['position']]['mask']))
+                if absolute or c['duty']!=b['duty']:
+                    duty=int(c['duty']);records.append((14,side,slot,duty>>32,duty&0xffffffff))
+                if absolute:records.append((18,side,slot,0,0))
+                for group,value in c['instructions'].items():
+                    # A role change changes the override-map key; explicitly carry edited settings.
+                    if absolute or value!=b['instructions'][group] or (c['role']!=b['role'] and value):records.append((6,side,slot,int(group),value))
+                if absolute or c['target_player']!=b['target_player'] or (c['role']!=b['role'] and c['target_player']!=255):records.append((7,side,slot,0,c['target_player']))
+                if absolute or c['target_position']!=b['target_position'] or (c['role']!=b['role'] and c['target_position']):records.append((7,side,slot,1,c['target_position']))
+        if absolute or t['lineup']!=base['lineup']:
+            records.extend((11,side,i,0,p)for i,p in enumerate(t['lineup']))
+        other=data['teams'][1-side];order=other['lineup']+[i for i in range(len(other['players']))if i not in other['lineup']]
+        for i,row in enumerate(t['opposition']['players']):
+            if row!=base['opposition']['players'][i]:records.append((20,side,order.index(i),0,pack_oi(row)))
+        for pos,row in t['opposition']['positions'].items():
+            if row!=base['opposition']['positions'][pos]:records.append((21,side,POSITIONS[pos]['mask'],0,pack_oi(row)))
+        if t['captains']!=base['captains']:
+            records.append((30,side,0,0xffffffff,0))
+            records.extend((30,side,0,j,i)for j,i in enumerate(t['captains']))
+            captain=next((i for i in t['captains']if i in t['lineup']),0xffffffff)
+            records.append((31,side,0,0,captain))
+        for list_id,k in enumerate(TAKER_KEYS,1):
+            if t['takers'][k]!=base['takers'][k]:
+                records.append((30,side,list_id,0xffffffff,0))
+                records.extend((30,side,list_id,j,i)for j,i in enumerate(t['takers'][k]))
+    return b'FM27CFG1'+struct.pack('<I',len(records))+b''.join(struct.pack('<5I',*r)for r in records)
+
+def repair_saved_scenario(data):
+    source=copy.deepcopy(data);source['rules']='lab'
+    n=validate_scenario(source);n['rules']='game';changes=[]
+    for side,t in enumerate(n['teams']):
+        if team_conflicts(t['instructions']):
+            t['instructions']['31']=next(o['id']for o in GROUPS[31]['options']if o['native_bit']==0)
+            changes.append('同侧内套／外套冲突已恢复其中一项为标准')
+        for phase,cells in enumerate(t['phases']):
+            for i,c in enumerate(cells):
+                allowed=role_options(cells,phase,c['position']);base=DEFAULT['teams'][side]['phases'][phase][i]
+                if c['role']not in allowed:
+                    c['role']=base['role']if base['role']in allowed else allowed[0];c['duty']='0';changes.append('已调整不适用于位置／阵型的角色')
+                policy=cell_policy(side,phase,i,c)
+                for g in PIS.values():
+                    v=c['instructions'][str(g['id'])]
+                    if v and (g['phase']!=phase or policy[v]!='0'):
+                        c['instructions'][str(g['id'])]=0;changes.append('已恢复角色固定／不适用的个人指令')
+    return {'scenario':validate_scenario(n),'changes':sorted(set(changes))}
+
+def metrics(runs):
+    if not runs:return None
+    scores=[r['result']['score']for r in runs];n=len(scores);w=sum(a>b for a,b in scores);draw=sum(a==b for a,b in scores)
+    p=w/n;z=1.959963984540054;den=1+z*z/n;center=(p+z*z/(2*n))/den;half=z*math.sqrt(p*(1-p)/n+z*z/(4*n*n))/den
+    return {'n':n,'wins':w,'draws':draw,'losses':n-w-draw,'win_rate':p,'win_interval':[max(0,center-half),min(1,center+half)],'goals_for':sum(a for a,b in scores)/n,'goals_against':sum(b for a,b in scores)/n,'points':(3*w+draw)/n}
+
+LOCK=threading.RLock();JOBS={};POOL=ThreadPoolExecutor(max_workers=1)
+IMPORT_LOCK=threading.Lock()
+
+def export_fmf(data):
+    side=integer(data['side'],0,1,'球队');scenario=validate_scenario(data['scenario']);team=scenario['teams'][side]
+    title=str(data.get('name')or team.get('tactic_name')or team['name']or'战术')[:100]
+    title=''.join(c for c in title if c not in '\\/:*?"<>|'and ord(c)>=32).strip(' .')or'战术'
+    directory=RUNS.parent/'exports'/secrets.token_hex(8);directory.mkdir(parents=True);config=directory/'scenario.bin';config.write_bytes(encode_scenario(scenario,absolute=True));plan=directory/'tactic.tac';log=directory/'native_write.jsonl'
+    env={k:v for k,v in os.environ.items()if k not in ['FM27_IMPORT_TAC','FM27_IMPORT_FMF','FM27_FMF_DETAILS','FM27_FMF_AUDIT','FM27_DESKTOP_STATS_AUDIT']};env.update(FM27_EXPORT_TAC=str(plan),FM27_EXPORT_SIDE=str(side),FM27_EXPORT_TITLE=title)
+    with IMPORT_LOCK:
+        desktop_engine.require_available(ENGINE_COMPATIBILITY)
+        env['FM27_GAME_ROOT']=os.environ.get('FM27_GAME_ROOT','')
+        env['FM27_EXPECTED_DLL_SHA256']=os.environ['FM27_EXPECTED_DLL_SHA256']
+        try:result=subprocess.run([str(NATIVE/'FM27Simulator.exe'),'--scenario-file',str(config),'--output',str(log)],cwd=ROOT,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=45,creationflags=subprocess.CREATE_NO_WINDOW)
+        except subprocess.TimeoutExpired:raise ValueError('原版战术写入超时，未生成导出文件')
+    if result.returncode or not plan.is_file():raise ValueError('原版战术序列化失败，未导出')
+    payload=fm27_fmf.tactics_archive(plan.read_bytes(),title);path=directory/(title+'.fmf');path.write_bytes(payload)
+    # Verify the archive and the original serialized plan through the same game
+    # parser used by imports. A download is returned only after semantic parity.
+    imported=import_fmf({'side':side,'scenario':scenario,'file_base64':base64.b64encode(payload).decode()});actual=imported['scenario']['teams'][side]
+    keys=['mentality','instructions','native_extra_team_bits','phases']
+    differences=[key for key in keys if actual[key]!=team[key]]
+    if differences:raise ValueError('导出后原版回读不一致：'+','.join(differences))
+    report={'name':title,'sha256':hashlib.sha256(payload).hexdigest(),'native_roundtrip_verified':True,'verified_sections':keys,'notice':'FMF 导出当前球队的双阶段阵型、角色、球队／球员指令及心态。球员属性、针对性指令与定位球不随此文件导出；完整工具配置请另存 JSON。'}
+    (directory/'verification.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf8')
+    return {'filename':title+'.fmf','file_base64':base64.b64encode(payload).decode(),'report':report}
+
+def import_fmf(data):
+    side=integer(data['side'],0,1,'球队');scenario=validate_scenario(data['scenario'])
+    try:payload=base64.b64decode(data['file_base64'],validate=True)
+    except (ValueError,TypeError):raise ValueError('FMF 文件编码无效')
+    if not 26<=len(payload)<=4*1024*1024 or payload[:6]not in(bytes.fromhex('02016166652e'),bytes.fromhex('0201666d662e')):raise ValueError('不是受支持的 FMF 归档，或文件超过 4 MB')
+    directory=RUNS.parent/'imports'/secrets.token_hex(8);directory.mkdir(parents=True);source=directory/'input.fmf';source.write_bytes(payload);output=directory/'native_import.jsonl'
+    env={k:v for k,v in os.environ.items()if k not in['FM27_IMPORT_TAC','FM27_DESKTOP_STATS_AUDIT']};env['FM27_IMPORT_FMF']=str(source)
+    with IMPORT_LOCK:
+        desktop_engine.require_available(ENGINE_COMPATIBILITY)
+        env['FM27_GAME_ROOT']=os.environ.get('FM27_GAME_ROOT','')
+        env['FM27_EXPECTED_DLL_SHA256']=os.environ['FM27_EXPECTED_DLL_SHA256']
+        try:result=subprocess.run([str(NATIVE/'FM27Simulator.exe'),'--output',str(output)],cwd=ROOT,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=45,creationflags=subprocess.CREATE_NO_WINDOW)
+        except subprocess.TimeoutExpired:raise ValueError('原版 FMF 解析超时，文件未导入')
+    try:rows=[json.loads(l)for l in output.read_text(encoding='utf8').splitlines()]
+    except (OSError,ValueError):raise ValueError('原版解析未生成完整记录，文件未导入')
+    parsed=next((r for r in rows if r.get('event')=='native_tactic_file_parsed'),None);decoded=next((r for r in rows if r.get('event')=='native_fmf_decoded'),None)
+    routine=next((r for r in rows if r.get('event')=='native_setpiece_file_parsed'),None)
+    if routine and not result.returncode and routine['accepted']and not routine['stream_error']:
+        target=data.get('setpiece_target')
+        if not target:raise ValueError('这是定位球套路，请在定位球页面导入')
+        kind=integer(target['type'],0,9,'定位球类型');variant=integer(target['variant'],0,2,'套路序号')
+        if kind!=routine['type']:raise ValueError('文件类型为'+setpieces.TYPE_NAMES[routine['type']]+'，请切换到对应类别后导入')
+        variants=scenario['teams'][side]['setpieces']['routines'][str(kind)]
+        if variant>=len(variants):raise ValueError('目标套路不存在')
+        backups=[[0]*len(g)for g in routine['groups']]
+        for g,i,v in routine['backups']:
+            if g>=8 or i>=len(backups[g]):raise ValueError('定位球备用任务越界')
+            backups[g][i]=v
+        variants[variant]={'name':bytes.fromhex(decoded['name_utf8_hex']).decode('utf8')[:48],'frequency':routine['frequency'],'strategy':routine['strategy'],'swing':routine['swing'],'groups':routine['groups'],'backups':backups,'priority':routine['priority'],'opaque_flags':routine['opaque_flags']}
+        scenario=validate_scenario(scenario);report={'setpiece_type':kind,'notice':'已通过原版解析器导入'+setpieces.TYPE_NAMES[kind]+'套路；包含任务、备用任务、分配顺序、发球策略和频率。','native_roundtrip_verified':True}
+        (directory/'import_report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf8');return {'scenario':scenario,'report':report}
+    if result.returncode or not parsed or not decoded or not parsed['accepted']or parsed['stream_error']:raise ValueError('原版解析器未完整接受此 FM27 战术，未改动当前配置')
+    team=scenario['teams'][side];team['mentality']=integer(parsed['mentality'],1,7,'比赛心态');bits=int.from_bytes(bytes.fromhex(parsed['team_bits']),'little');team['native_extra_team_bits']=str(bits&~TEAM_KNOWN_MASK)
+    team['tactic_name']=bytes.fromhex(decoded['name_utf8_hex']).decode('utf8')[:120]
+    for g in GROUPS.values():
+        active=[o['id']for o in g['options']if o['native_bit']and bits>>o['native_bit']&1]
+        if len(active)>1:raise ValueError('FMF 中存在本工具无法无损表示的同组指令组合，未导入')
+        if active:team['instructions'][str(g['id'])]=active[0]
+        else:
+            default=next((o['id']for o in g['options']if not o['native_bit']),None)
+            if default is None:raise ValueError('FMF 缺少必要的原生阵线选项')
+            team['instructions'][str(g['id'])]=default
+    mapping=[i if n==255 else n for i,n in enumerate(parsed['mapping'])]
+    if sorted(mapping)!=list(range(11)):raise ValueError('FMF 双阶段对应关系无效')
+    for phase in range(2):
+        for i in range(11):
+            record=parsed['phases'][phase][mapping[i]if phase else i];cell=team['phases'][phase][i];position=next((p['id']for p in POSITIONS.values()if p['mask']==record['position']),None);flags=int(record['role_flags']);role=next((r['id']for r in ROLES.values()if r['phase']==phase and int(r['flags'])==flags&ROLE_MASK),None)
+            if position is None or role is None:raise ValueError('FMF 使用尚未映射的位置或角色，未导入')
+            cell.update(position=position,role=role,duty=str(flags&~ROLE_MASK),target_player=record['target_player'],target_position=record['target_position']);pi=int(record['pi_flags']);cell['instructions']={str(g['id']):next((o['id']for o in g['options']if o['id']and pi>>o['id']&1),0)for g in PIS.values()}
+    repaired=repair_saved_scenario(scenario);report={'source_sha256':hashlib.sha256(payload).hexdigest(),'tactic_name':team['tactic_name'],'core_bytes_consumed':parsed['consumed'],'decoded_bytes':parsed['size'],'preserved_extra_native_bits':[i for i in range(128)if int(team['native_extra_team_bits'])>>i&1],'normalization':repaired['changes'],'retained_sections':['球员与属性','定位球套路','针对性指令','主罚与队长名单'],'notice':'已导入当前球队的双阶段阵型、角色、指令及心态。球员、定位球、针对性指令和主罚名单保留当前配置。'}
+    (directory/'import_report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf8');return {'scenario':repaired['scenario'],'report':report}
+def export_setpiece(data):
+    side=integer(data['side'],0,1,'球队');scenario=validate_scenario(data['scenario']);kind=integer(data['type'],0,9,'定位球类型');variant=integer(data['variant'],0,2,'套路序号');rows=scenario['teams'][side]['setpieces']['routines'][str(kind)]
+    if variant>=len(rows):raise ValueError('套路不存在')
+    routine=rows[variant];payload=fm27_fmf.setpiece_archive(kind,routine)
+    restored=import_fmf({'side':side,'scenario':scenario,'setpiece_target':{'type':kind,'variant':variant},'file_base64':base64.b64encode(payload).decode()})
+    actual=restored['scenario']['teams'][side]['setpieces']['routines'][str(kind)][variant]
+    if actual!=routine:raise ValueError('定位球导出回读不一致，未下载')
+    name=''.join(c for c in routine['name']if c not in '\\/:*?"<>|'and ord(c)>=32).strip(' .')or'定位球'
+    return {'filename':name+'.fmf','file_base64':base64.b64encode(payload).decode(),'report':{'native_roundtrip_verified':True,'notice':'定位球 FMF 已通过原版回读核验。'}}
+
+def persist(job):
+    with LOCK:
+        public={k:v for k,v in job.items() if not k.startswith('_')}
+        temporary=job['_dir']/'summary.tmp'
+        temporary.write_text(json.dumps(public,ensure_ascii=False,indent=2),encoding='utf8')
+        os.replace(temporary,job['_dir']/'summary.json')
+
+def episode_metrics(runs,side):
+    valid=[r for r in runs if r.get('episode',{}).get('found')];n=len(valid)
+    return {'generated':len(runs),'n':n,'unavailable':len(runs)-n,'goals_for':sum(r['result']['score'][side]for r in valid),'goals_against':sum(r['result']['score'][1-side]for r in valid),'goals_per_100':sum(r['result']['score'][side]for r in valid)*100/n if n else None,'conceded_per_100':sum(r['result']['score'][1-side]for r in valid)*100/n if n else None,'shots_per_100':sum(r['statistics']['teams'][side]['shots']for r in valid)*100/n if n else None,'xg_per_100':sum(r['statistics']['teams'][side]['xg']for r in valid)*100/n if n else None}
+
+def update_metrics(job,scenarios):
+    if job.get('experiment_type')=='setpiece_episode':
+        job['metrics']={v:episode_metrics([r for r in job['runs']if r['variant']==v],job['episode_settings']['tested_side'])for v,s in scenarios}
+        job['distributions']={v:fm27_match_events.distribution([r for r in job['runs']if r['variant']==v and r.get('episode',{}).get('found')])for v,s in scenarios}
+        return
+    job['metrics']={v:metrics([r for r in job['runs']if r['variant']==v])for v,s in scenarios}
+    job['distributions']={v:fm27_match_events.distribution([r for r in job['runs']if r['variant']==v])for v,s in scenarios}
+    if len(scenarios)==2:
+        aa={r['seed']:r for r in job['runs']if r['variant']=='A'};bb={r['seed']:r for r in job['runs']if r['variant']=='B'}
+        pairs=[(aa[k],bb[k])for k in aa.keys()&bb.keys()]
+        job['paired']={'n':len(pairs),'goal_difference_delta':sum((b['result']['score'][0]-b['result']['score'][1])-(a['result']['score'][0]-a['result']['score'][1])for a,b in pairs)/len(pairs)if pairs else None}
+
+def execute(job,scenarios,seeds):
+    began=time.perf_counter();previous=job.get('elapsed_seconds',0);initial=job['completed'];last_save=0
+    runner=BatchRunner(ROOT,job['workers'],retries=1)if job.get('episode_settings')else DesktopWarmRunner(ROOT,job['workers'],retries=0)
+    with LOCK:
+        job['_runner']=runner;job['status']='running';job['started']=time.time()
+        if job.get('_cancel'):runner.cancel()
+    try:
+        completed={(r['variant'],r['seed'])for r in job['runs']}
+        tasks=[{'key':f'{label}:{seed}','variant':label,'seed':seed,'scenario':next(s for v,s in scenarios if v==label),'position_names':{p['mask']:p['id']for p in POSITIONS.values()},'episode':job.get('episode_settings'),'config':job['_dir']/f'{label}.bin','path':job['_dir']/f'{index:04d}_{label}_seed_{seed}.jsonl'}for index,seed in enumerate(seeds)for label,_ in scenarios if(label,seed)not in completed]
+        for task in tasks:task['event_details']=job.get('event_details',True)
+        def result(run):
+            with LOCK:
+                if run.get('failed'):job['failures'].append(run)
+                else:
+                    run['log_sha256']=hashlib.sha256((job['_dir']/run['log']).read_bytes()).hexdigest()
+                    run['sequence']=len(job['runs'])+1
+                    job['runs'].append(run);job['runs'].sort(key=lambda r:(r['seed'],r['variant']));job['completed']=len(job['runs']);update_metrics(job,scenarios)
+                persist(job)
+        def progress(active):
+            nonlocal last_save
+            with LOCK:
+                elapsed=time.perf_counter()-began;n=job['completed']-initial
+                job.update(active=active,current=active[0]if active else None,elapsed_seconds=round(previous+elapsed,3),matches_per_minute=round(n*60/elapsed,2)if elapsed else 0,eta_seconds=round((job['total']-job['completed'])*elapsed/n)if n else None)
+                if elapsed-last_save>=1:persist(job);last_save=elapsed
+        runner.run(tasks,result,progress)
+        with LOCK:
+            job['status']='error'if job['failures']else('cancelled'if runner.stop.is_set()else'complete')
+            if job['failures']:job['error']=f"{len(job['failures'])}项原生比赛或数据校验失败；现场与原种子保留，未自动重跑整场比赛"
+    except Exception as e:
+        with LOCK:job['status']='error';job['error']=str(e)
+    finally:
+        with LOCK:
+            if hasattr(runner,'session_diagnostics'):job['session_diagnostics']=runner.session_diagnostics
+            job.pop('_runner',None);job['finished']=time.time();job['current']=None;job['active']=[];job['elapsed_seconds']=round(previous+time.perf_counter()-began,3)
+            if job['status']=='complete':job['eta_seconds']=0
+            persist(job)
+
+def resume_job(job,workers):
+    if job.get('initial_state_policy',{}).get('id')!='controlled-start-v3':raise ValueError('旧实验的开赛状态规则不同，请新建实验，避免混合结果')
+    if job.get('batch_schema')!=1:raise ValueError('旧任务缺少批量校验记录，请新建实验')
+    provenance=json.loads((job['_dir']/'provenance.json').read_text(encoding='utf8'))
+    if job.get('event_details',True)!=provenance.get('event_details',True):raise ValueError('事件采集模式与原任务不同，不能混合续跑')
+    if provenance.get('native_dll_sha256')!=ENGINE_DLL_SHA256 or provenance.get('engine_resource_fingerprint')!=ENGINE_COMPATIBILITY['resource_fingerprint']:raise ValueError('实际引擎或比赛资源与本实验不同，请新建实验以免混合结果')
+    for name,path in [('host_sha256',NATIVE/'FM27Simulator.exe'),('fixture_sha256',NATIVE/'fixtures/match.pkm')]:
+        if provenance[name]!=hashlib.sha256(path.read_bytes()).hexdigest():raise ValueError('引擎或比赛样本已改变，请新建实验以免混合结果')
+    scenarios=[]
+    for label,digest in provenance['config_hashes'].items():
+        config=job['_dir']/f'{label}.bin'
+        if hashlib.sha256(config.read_bytes()).hexdigest()!=digest:raise ValueError('保存的战术输入已改变')
+        scenario=json.loads((job['_dir']/f'{label}.json').read_text(encoding='utf8'))
+        if encode_scenario(scenario)!=config.read_bytes():raise ValueError('方案与已保存的比赛输入不一致')
+        scenarios.append((label,scenario))
+    for run in job['runs']:
+        path=job['_dir']/run['log']
+        if hashlib.sha256(path.read_bytes()).hexdigest()!=run['log_sha256']:raise ValueError('已完成比赛日志已改变')
+        if inspect_saved_run(job['_dir'],run)['result']!=run['result']:raise ValueError('已完成比赛结果校验失败')
+    if job['completed']>=job['total']:raise ValueError('该实验已经完成')
+    if job.get('failures'):job.setdefault('failure_history',[]).extend(copy.deepcopy(job['failures']))
+    job.update(status='queued',workers=workers,failures=[],error=None,_cancel=False)
+    persist(job);POOL.submit(execute,job,scenarios,provenance['seeds'])
+
+class DesktopPresence:
+    """One lease per app document; reloads get an eight-second grace period."""
+    def __init__(self):
+        self.lock=threading.Lock();self.pages={};self.seen=False;self.empty_since=None
+    def update(self,data):
+        key=data.get('page');action=data.get('action')
+        if not isinstance(key,str)or not 1<=len(key)<=100 or action not in('open','close'):raise ValueError('Invalid desktop presence')
+        with self.lock:
+            if action=='open':self.pages[key]=time.monotonic();self.seen=True;self.empty_since=None
+            else:self.pages.pop(key,None)
+        return self.status()
+    def status(self):
+        with self.lock:
+            now=time.monotonic();self.pages={k:v for k,v in self.pages.items()if now-v<180}
+            if self.pages:self.empty_since=None
+            elif self.seen and self.empty_since is None:self.empty_since=now
+            return {'pages':len(self.pages),'seen':self.seen,'close_ready':self.empty_since is not None and now-self.empty_since>=8}
+DESKTOP_PRESENCE=DesktopPresence()
+
+class Handler(BaseHTTPRequestHandler):
+    server_version='FM27Lab/1.0'
+    def send(self,value,status=200,kind='application/json; charset=utf-8'):
+        body=value if isinstance(value,bytes)else json.dumps(value,ensure_ascii=False).encode('utf8')
+        self.send_response(status);self.send_header('Content-Type',kind);self.send_header('Content-Length',str(len(body)));self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.end_headers();self.wfile.write(body)
+    def do_GET(self):
+        path=urlparse(self.path).path
+        if path=='/api/desktop-presence':return self.send(DESKTOP_PRESENCE.status())
+        if path=='/api/catalog':return self.send(CATALOG)
+        if path=='/api/defaults':return self.send(DEFAULT)
+        if path=='/api/phase-defaults':return self.send(phase_inputs.pack(DEFAULT,CATALOG))
+        if path=='/api/status':return self.send({'engine':'original_native','engine_compatibility':ENGINE_COMPATIBILITY,'server_pid':os.getpid(),'fixture_me_version':'26.8.0.0','independent':True,'team_groups':len(GROUPS),'team_options':sum(len(g['options'])for g in GROUPS.values()),'player_groups':17,'roles':79,'batch':{'max_matches_per_variant':10000,**BATCH_LIMITS,'isolation':'bounded_reused_native_sessions','jobs_per_native_session':64,'postprocess_workers':2,'whole_match_automatic_retries':0}})
+        if path=='/api/jobs':
+            with LOCK:return self.send([{k:v for k,v in j.items()if not k.startswith('_')and(k!='runs'or parse_qs(urlparse(self.path).query).get('brief')!=['1'])}for j in sorted(JOBS.values(),key=lambda j:j.get('created',0))])
+        parts=path.strip('/').split('/')
+        if len(parts)>=3 and parts[:2]==['api','jobs']:
+            with LOCK:
+                job=JOBS.get(parts[2])
+                if not job:return self.send({'error':'任务不存在'},404)
+                if len(parts)==3:
+                    progress=parse_qs(urlparse(self.path).query).get('progress');unchanged=progress==[str(job['completed'])]
+                    delta=bool(progress and progress[0].isdigit()and int(progress[0])<=job['completed']and all('sequence'in r for r in job['runs']))
+                    response={k:v for k,v in job.items()if not k.startswith('_')and(k!='runs'or not(unchanged or delta))};response['runs_unchanged']=unchanged
+                    if delta and not unchanged:response['runs_delta']=[r for r in job['runs']if r['sequence']>int(progress[0])]
+                    return self.send(response)
+                if len(parts)==4 and parts[3]=='export':
+                    package={'summary':{k:v for k,v in job.items() if not k.startswith('_')},'scenarios':{}}
+                    for variant in ('A','B'):
+                        p=job['_dir']/f'{variant}.json'
+                        if p.exists():package['scenarios'][variant]=phase_inputs.pack(json.loads(p.read_text(encoding='utf8')),CATALOG)
+                    package['provenance']=json.loads((job['_dir']/'provenance.json').read_text(encoding='utf8'))
+                    return self.send(package)
+                if len(parts)==5 and parts[3]=='logs':
+                    name=parts[4]
+                    if name not in [r['log']for r in job['runs']]:return self.send({'error':'日志不存在'},404)
+                    return self.send((job['_dir']/name).read_bytes(),kind='application/x-ndjson; charset=utf-8')
+        known={'/team-bulk.js':'team-bulk.js','/desktop-workspace.js':'desktop-workspace.js','/match-events.js':'match-events.js','/desktop.js':'desktop.js','/desktop.css':'desktop.css','/':'index.html','/app.js':'app.js','/advanced.js':'advanced.js','/setpieces.js':'setpieces.js','/batch.js':'batch.js','/style.css':'style.css'}
+        if path in known:
+            name=known[path];kind={'html':'text/html','js':'text/javascript','css':'text/css'}[name.split('.')[-1]]
+            return self.send((WEB/name).read_bytes(),kind=kind+'; charset=utf-8')
+        self.send({'error':'不存在'},404)
+    def do_POST(self):
+        origin=self.headers.get('Origin')
+        if origin and origin!=f'http://{self.headers.get("Host")}':return self.send({'error':'拒绝跨站调用'},403)
+        try:
+            length=int(self.headers.get('Content-Length',0))
+            if not 0<length<=(6000000 if urlparse(self.path).path=='/api/import-fmf'else 1500000):raise ValueError('请求大小无效')
+            data=json.loads(self.rfile.read(length));path=urlparse(self.path).path
+            if path=='/api/desktop-presence':return self.send(DESKTOP_PRESENCE.update(data))
+            if path=='/api/engine/select':
+                global ENGINE_COMPATIBILITY,ENGINE_DLL_SHA256
+                selected=data.get('path')
+                if not isinstance(selected,str) or not selected.strip():raise ValueError('请填写游戏安装目录')
+                selected=str(Path(selected.strip()).resolve())
+                with IMPORT_LOCK,LOCK:
+                    if any(j['status']in ('queued','running')for j in JOBS.values()):return self.send({'error':'比赛运行中不能更换游戏目录'},409)
+                    os.environ['FM27_GAME_ROOT']=selected
+                    ENGINE_COMPATIBILITY=desktop_engine.initialize(ROOT)
+                    ENGINE_DLL_SHA256=ENGINE_COMPATIBILITY['actual_dll_sha256']
+                    (RUNS.parent/'game-root.txt').write_text(selected,encoding='utf-8-sig')
+                    return self.send(ENGINE_COMPATIBILITY)
+            if path in ('/api/import-fmf','/api/export-fmf','/api/export-setpiece'):
+                desktop_engine.require_available(ENGINE_COMPATIBILITY)
+            if path=='/api/import-fmf':return self.send(import_fmf(data))
+            if path=='/api/export-fmf':return self.send(export_fmf(data))
+            if path=='/api/export-setpiece':return self.send(export_setpiece(data))
+            if path=='/api/validate':return self.send({'scenario':validate_scenario(data),'records':(len(encode_scenario(data))-12)//20})
+            if path=='/api/phase-plan':return self.send({'scenario':phase_inputs.pack(validate_scenario(data),CATALOG)})
+            if path=='/api/repair':return self.send(repair_saved_scenario(data))
+            if path in('/api/run','/api/run-episodes'):
+                event_details=data.get('event_details',True)
+                if type(event_details)is not bool:raise ValueError('事件明细开关必须为布尔值')
+                if path=='/api/run-episodes'and not event_details:raise ValueError('定位球片段需要事件明细；快速模式仅适用于整场比赛')
+                scenario=validate_scenario(data['scenario']);reference=validate_scenario(data['reference']) if data.get('reference')else None
+                episode=None
+                if path=='/api/run-episodes':
+                    tested_type=integer(data['type'],0,9,'定位球类型');tested_side=integer(data['side'],0,1,'测试球队');variant=integer(data.get('variant',0),0,2,'套路序号');seconds=integer(data.get('window_seconds',30),5,120,'观察窗口秒数')
+                    for target in [scenario]+([reference]if reference else[]):
+                        routines=target['teams'][tested_side]['setpieces']['routines'][str(tested_type)]
+                        if variant>=len(routines):raise ValueError('测试套路不存在')
+                        target['teams'][tested_side]['setpieces']['routines'][str(tested_type)]=[copy.deepcopy(routines[variant])]
+                    episode={'type':tested_type if tested_type>=5 else tested_type+5,'tested_type':tested_type,'tested_side':tested_side,'attacking_side':tested_side if tested_type>=5 else 1-tested_side,'window_seconds':seconds}
+                seeds=data['seeds']
+                if not isinstance(seeds,list)or not 1<=len(seeds)<=10000 or len(set(seeds))!=len(seeds):raise ValueError('需要1–10000个不重复种子')
+                seeds=[integer(s,0,0xffffffff,'随机种子')for s in seeds]
+                workers=integer(data.get('workers',BATCH_LIMITS['recommended']),1,BATCH_LIMITS['maximum'],'并行数')
+                with LOCK:
+                    desktop_engine.require_available(ENGINE_COMPATIBILITY)
+                    if any(j['status']in ('queued','running')for j in JOBS.values()):return self.send({'error':'已有比赛运行中，请等待或取消'},409)
+                    key=secrets.token_hex(6);directory=RUNS/f'{datetime.now():%Y%m%d_%H%M%S}_{key}';directory.mkdir(parents=True)
+                    variants=[('A',reference),('B',scenario)]if reference else [('B',scenario)]
+                    for label,s in variants:
+                        (directory/f'{label}.json').write_text(json.dumps(s,ensure_ascii=False,indent=2),encoding='utf8');(directory/f'{label}.bin').write_bytes(encode_scenario(s))
+                        (directory/f'{label}.phases.json').write_text(json.dumps(phase_inputs.pack(s,CATALOG),ensure_ascii=False,indent=2),encoding='utf8')
+                    provenance={'host_sha256':hashlib.sha256((NATIVE/'FM27Simulator.exe').read_bytes()).hexdigest(),'fixture_sha256':hashlib.sha256((NATIVE/'fixtures/match.pkm').read_bytes()).hexdigest(),'native_dll_sha256':ENGINE_DLL_SHA256,'engine_compatibility':copy.deepcopy(ENGINE_COMPATIBILITY),'engine_resource_fingerprint':ENGINE_COMPATIBILITY['resource_fingerprint'],'seeds':seeds,'fixture_me_version':'26.8.0.0','config_hashes':{label:hashlib.sha256((directory/f'{label}.bin').read_bytes()).hexdigest()for label,_ in variants}}
+                    provenance['event_details']=event_details
+                    (directory/'provenance.json').write_text(json.dumps(provenance,indent=2),encoding='utf8')
+                    job={'batch_schema':1,'workers':workers,'failures':[],'active':[],'id':key,'status':'queued','completed':0,'total':len(seeds)*len(variants),'runs':[],'metrics':{},'created':time.time(),'output_dir':str(directory),'_dir':directory}
+                    job['event_details']=event_details
+                    job['engine_compatibility']=copy.deepcopy(ENGINE_COMPATIBILITY)
+                    job['runtime_mode']='isolated_native_episode'if episode else'reused_native_worker'
+                    job['jobs_per_native_session']=1 if episode else 64
+                    job['initial_state_policy']={'id':'controlled-start-v3','player_values':copy.deepcopy(profiles.CONTROLLED_START),'morale_verified':True,'cohesion_verified':True}
+                    job['mode']='comparison'if reference else'single';job['variant_names']={label:s['teams'][0].get('tactic_name','')for label,s in variants}
+                    job['team_names']={label:[t['name']for t in s['teams']]for label,s in variants}
+                    if episode:job.update(experiment_type='setpiece_episode',episode_settings=episode)
+                    JOBS[key]=job;persist(job);POOL.submit(execute,job,variants,seeds)
+                    return self.send({'id':key},202)
+            if path=='/api/resume':
+                workers=integer(data.get('workers',BATCH_LIMITS['recommended']),1,BATCH_LIMITS['maximum'],'并行数')
+                with LOCK:
+                    desktop_engine.require_available(ENGINE_COMPATIBILITY)
+                    if any(j['status']in ('queued','running')for j in JOBS.values()):return self.send({'error':'已有比赛运行中'},409)
+                    job=JOBS.get(data['id'])
+                    if not job:raise ValueError('任务不存在')
+                    resume_job(job,workers)
+                return self.send({'id':job['id']},202)
+            if path=='/api/cancel':
+                with LOCK:
+                    j=JOBS.get(data['id']);runner=None
+                    if j and j['status']in ('queued','running'):
+                        j['_cancel']=True;runner=j.get('_runner')
+                if runner:runner.cancel()
+                return self.send({'accepted':bool(j)})
+            return self.send({'error':'不存在'},404)
+        except (KeyError,TypeError,ValueError,OverflowError) as e:return self.send({'error':str(e)},400)
+        except Exception as e:return self.send({'error':str(e)},500)
+
+def main():
+    process_owner=own_child_processes()
+    p=argparse.ArgumentParser();p.add_argument('--port',type=int,default=8765);args=p.parse_args()
+    for summary in sorted((RUNS).glob('*/summary.json'),reverse=True)[:40]:
+        try:
+            job=json.loads(summary.read_text(encoding='utf8'))
+            if not isinstance(job.get('runs'),list)or not isinstance(job.get('id'),str):continue
+            job['_dir']=summary.parent
+            if job.get('status')in ('queued','running'):
+                job.update(status='interrupted',error='服务重启，任务未完整完成；已完成比赛仍可查看。',current=None,active=[],eta_seconds=None)
+            JOBS[job['id']]=job
+        except (ValueError,OSError):continue
+    server=ThreadingHTTPServer(('127.0.0.1',args.port),Handler)
+    print(f'FM27 tactics lab: http://127.0.0.1:{args.port}',flush=True)
+    try:server.serve_forever()
+    except KeyboardInterrupt:pass
+    finally:
+        with LOCK:
+            for job in JOBS.values():
+                if job.get('status')in ('queued','running'):
+                    job['_cancel']=True
+                    if job.get('_runner'):job['_runner'].cancel()
+        server.server_close();POOL.shutdown(wait=False,cancel_futures=True)
+if __name__=='__main__':main()

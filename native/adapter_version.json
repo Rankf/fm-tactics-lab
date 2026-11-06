@@ -1,0 +1,19 @@
+{
+  "version": "27.0.0+2493426",
+  "reference_dll_sha256": "252ff8fb5b7a4a5a5464db6ba632e309eef9b6e65ffa992ae20575a189e66c6a",
+  "additional_serializer_mapping": [
+    {
+      "old_rva": "0x16fca0",
+      "new_rva": "0x16fca0",
+      "full_masked_function_identity": true
+    },
+    {
+      "old_rva": "0x49a7c70",
+      "new_rva": "0x49a9ab0",
+      "full_masked_function_identity": true
+    }
+  ],
+  "compatibility_ranges": 77,
+  "compatibility_bytes": 69675,
+  "whole_DLL_SHA_is_admission_gate": false
+}
