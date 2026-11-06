@@ -8,7 +8,7 @@ The source package contains the Python application, browser UI, C# launcher, C++
 
 ## Desktop release
 
-The original v1103.2 EXE is a separate desktop distribution. It includes a private CPython 3.12 runtime and its `LICENSE.txt`, the tool's native host, compatibility comparison data and matching initial inputs. It loads the original engine DLL and game resource archives from the user's installation; those game components are not included in the EXE.
+The v1103.2 and v1106 EXEs are separate desktop distributions. Each includes a private CPython 3.12 runtime and its `LICENSE.txt`, the tool's native host, compatibility comparison data and matching initial inputs. It loads the original engine DLL and game resource archives from the user's installation; those game components are not included in the EXE.
 
 The MIT grant covers the tool code. It does not relicense game-related inputs, extracted comparison bytes, third-party components or their trademarks. CPython and its bundled components retain the licenses shipped in the runtime. Windows SDK, MSVC and .NET Framework are build prerequisites and are not included in the source archive.
 

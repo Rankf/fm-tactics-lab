@@ -1,3 +1,16 @@
+# v1106 packaged update validation
+
+- EXE: `FM27-Tactics-Lab-v1106.exe`.
+- EXE SHA256: `e05f81c8100e626bbff838e04e4c8cb9b962e5158a7c6c3c918cde06f95cec22`.
+- Embedded payload SHA256: `d184d2a0d0b5866ad35e473996536a88cec86c1355754687d1f394165ecec26d`.
+- Native host SHA256: `6a537a8c58736186272ffd16fa895df0084e7ceb2a7659fa829c3ba5b8630f61` (identical to the original v1103.2 host).
+- Actual packaged browser: title and version badge show v1106; `engine-settings.js` returns HTTP 200; engine status changes from missing resources to verified after manual game-directory selection; no browser console errors.
+- Two actual packaged native matches, seed 42: full and quick modes each complete with score 0:3 and identical team statistics, zero failures. Full-mode incident registry verification succeeds; quick-mode events are disabled as intended.
+- Python/JavaScript syntax checks and all four release-boundary/profile tests pass. Input preparation from the verified v1106 EXE succeeds.
+- Missing-game startup self-test also passes with the engine script endpoint included in the launcher self-test.
+
+The v1103.2 tag and download assets remain unchanged. The following records describe that historical release.
+
 # v1103.2 provenance and validation
 
 ## Release identity

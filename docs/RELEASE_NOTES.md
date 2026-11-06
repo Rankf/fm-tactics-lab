@@ -1,23 +1,35 @@
-# FM 战术实验室 / FM Tactics Lab — v1103.2
+# FM 战术实验室 / FM Tactics Lab — v1106
 
-首个公开发布版本，使用原版 FM27 详细比赛引擎，在本机批量测试战术。
+修复顶部一直显示“正在检查本地引擎”的问题。
 
-## 下载与使用
+## 更新内容
 
-下载 `FM27-Tactics-Lab-v1103.2.exe`，打开 Steam 并登录拥有游戏的账号，双击运行。EXE 自带 Python，玩家无需安装开发环境。首次启动后确认游戏目录，导入 FMF 战术，设置双方球员，选择场数并运行。
+- 补齐引擎设置脚本的静态路由，检查状态能够正常刷新。
+- 恢复“选择此目录并检查”的事件绑定，支持手动指定游戏路径并查看缺失资源。
+- 标题和界面加入 v1106 标识；打包自检新增引擎设置脚本检查。
+- 中英文说明和界面截图一并更新到源码包。
 
-本次提供指定的 v1103.2 原始 EXE。包含双阶段战术、球员编辑、定位球、同种子战术对比、比分与原版统计、完整／快速采集模式，以及兼容性分级和手动选择游戏路径。存档对战功能暂留在后续开发版本中。
+下载 `FM27-Tactics-Lab-v1106.exe`，完全退出旧程序（包括托盘），再启动新版。游戏仍需在本机安装，Steam 需登录拥有游戏的账号。EXE 自带 Python，玩家无需安装开发环境。
 
-源码包：`fm-tactics-lab-v1103.2-source.zip`。中英文使用说明位于仓库 README。Windows x64；适配参考构建 `27.0.0+2493426`。快速模式仍计算详细整场比赛，只减少球员事件明细采集。
+本版沿用 v1103.2 的原生比赛宿主与比赛逻辑，存档对战功能继续留在后续开发版本中。v1103.2 历史 Release 保留。
+
+## 验证
+
+已验证引擎检查脚本 HTTP 200、版本显示、缺失资源提示、手动切换到正确目录、完整／快速模式各一场真实比赛。两个模式同种子的比分与球队统计一致。完整模式事件校验通过，快速模式正确关闭事件明细。
 
 ## English
 
-The first public release of FM Tactics Lab: batch tactical experiments using the original FM27 detailed match engine.
+Fixes the engine status getting stuck on “Checking local engine”.
 
-Download `FM27-Tactics-Lab-v1103.2.exe`, open Steam and sign in to the account that owns the game, then launch the EXE. Python is included. Select the game directory, import a tactic, configure both squads and run a batch. The desktop UI is in Chinese; English usage instructions are in `README.en.md`.
+- Serve the missing engine settings script so status initialization and manual game-path checks work.
+- Show actionable missing-resource diagnostics and allow selecting the correct game directory.
+- Add v1106 version labels and include the engine script endpoint in packaged startup self-tests.
+- Include the bilingual guides and actual UI screenshots in the source package.
 
-This release preserves the original v1103.2 executable. It includes possession-phase tactics, player editing, set pieces, paired-seed comparisons, native scores and team statistics, full/quick event collection, and graded engine compatibility. Career-save versus mode remains in later development versions.
+Download `FM27-Tactics-Lab-v1106.exe`. Fully exit the old application, including its tray process, before launching the update. FM27 must be installed locally and Steam signed in to the account that owns the game. Python is bundled.
 
-Source asset: `fm-tactics-lab-v1103.2-source.zip`. Windows x64; adapter reference build `27.0.0+2493426`. Quick mode still runs detailed full matches, with reduced player-event collection.
+The original v1103.2 native match host is retained. Career-save versus mode remains in later development versions; the historical v1103.2 release stays available.
 
-Verify downloads using `SHA256SUMS.txt`. Tool source is MIT licensed; third-party and game-related assets retain their own scope as described in `THIRD_PARTY_NOTICES.md`.
+Validated on the packaged EXE: script HTTP 200, visible version, missing-resource diagnostics, manual path recovery, and one full-mode plus one quick-mode native match with equal same-seed scores and team statistics.
+
+Use `SHA256SUMS.txt` to verify the EXE and `fm-tactics-lab-v1106-source.zip`. Tool code is MIT licensed. See the repository for Chinese and English usage guides and third-party notices.

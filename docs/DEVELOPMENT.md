@@ -1,12 +1,12 @@
-# Building FM Tactics Lab v1103.2
+# Building FM Tactics Lab v1106
 
-The source in this repository follows the v1103.2 desktop payload. Career-save versus modules and their dependencies are excluded from this release.
+The v1106 source follows the v1103.2 desktop payload with the engine-settings static route fix and updated version labels. Career-save versus modules and their dependencies are excluded from this release.
 
 ## Requirements
 
 - Windows x64, full CPython 3.12 x64, and MSVC C++17 with the Windows SDK.
 - A local FM27 installation; the adapter reference build is `27.0.0+2493426`.
-- The original v1103.2 EXE from this repository's Releases, used to supply the matching initial inputs.
+- A verified v1106 or v1103.2 EXE from this repository's Releases, used to supply the matching initial inputs.
 
 The Python application uses the standard library. No save-parser package is needed.
 
@@ -16,7 +16,7 @@ Run these commands from the repository root:
 
 ```powershell
 py -3.12 -m venv .venv
-.venv\Scripts\python.exe scripts/prepare_private.py --release-exe "D:\Downloads\FM27-Tactics-Lab-v1103.2.exe"
+.venv\Scripts\python.exe scripts/prepare_private.py --release-exe "D:\Downloads\FM27-Tactics-Lab-v1106.exe"
 ```
 
 The script checks the original EXE and embedded payload SHA256, then reads only the named input assets into ignored `private/` directories. It does not execute the EXE. An existing matching asset directory can alternatively be supplied with `--assets-root` and `--catalog`.
@@ -45,9 +45,9 @@ Open the printed loopback URL after startup. Press `Ctrl+C` to stop the source e
 .venv\Scripts\python.exe scripts/build_exe.py --python-home "D:\Python312"
 ```
 
-Supply a full CPython 3.12 x64 distribution containing `Lib`, `DLLs`, `python312.dll`, the runtime libraries and `LICENSE.txt`. The script uses the .NET Framework C# compiler; `--csc` can override its location. Output: `dist/FM-Tactics-Lab-local.exe`.
+Supply a full CPython 3.12 x64 distribution containing `Lib`, `DLLs`, `python312.dll`, the runtime libraries and `LICENSE.txt`. The script uses the .NET Framework C# compiler; `--csc` can override its location. Output: `dist/FM27-Tactics-Lab-v1106.exe`.
 
-The downloadable v1103.2 EXE is preserved unchanged. A local rebuild uses the published source and build scripts; reproducible byte-for-byte executable output is not claimed.
+The historical v1103.2 EXE is preserved unchanged. The v1106 desktop release uses the same original native host binary. A local rebuild uses the published source and build scripts; reproducible byte-for-byte executable output is not claimed.
 
 ## Validate and export source
 

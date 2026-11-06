@@ -1,9 +1,9 @@
 # Changelog
 
-## Unreleased
+## v1106 — 2026-11-06
 
 - Add actual interface screenshots to both player guides.
-- Serve `engine-settings.js` from the static route allowlist so engine diagnostics and manual path selection initialize correctly. The published v1103.2 EXE is unchanged.
+- Serve `engine-settings.js` from the static route allowlist so engine diagnostics and manual path selection initialize correctly. The v1103.2 release is retained. New desktop builds display v1106 and self-test the engine settings endpoint.
 
 ## v1103.2 — Public release
 

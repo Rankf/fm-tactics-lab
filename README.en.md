@@ -40,7 +40,7 @@ Each batch uses a sequence of random seeds. When comparing a saved reference wit
 
 ## Download and launch
 
-Download **`FM27-Tactics-Lab-v1103.2.exe`** from [Releases](https://github.com/lqf0624/fm-tactics-lab/releases/latest). This release preserves the original desktop binary and version number. Career-save versus mode remains in later development versions.
+Download **`FM27-Tactics-Lab-v1106.exe`** from [Releases](https://github.com/lqf0624/fm-tactics-lab/releases/latest). This update fixes engine status initialization and manual game-path selection. The previous v1103.2 binary remains available in release history. Career-save versus mode remains in later development versions.
 
 Install FM27, open Steam and sign in to the account that owns the game, then launch the EXE. The tool looks for your installation automatically. You can also select the game root containing `fm_Data` and `shared` in the engine settings at the top.
 
@@ -124,7 +124,7 @@ Both full squads start with condition and match sharpness at 100%, accumulated f
 
 ## Version and project information
 
-This release is **v1103.2**, for Windows x64. The adapter reference build is `27.0.0+2493426`. Tool code is licensed under MIT; the engine and game resources come from your local installation.
+This release is **v1106**, for Windows x64. The adapter reference build is `27.0.0+2493426`. Tool code is licensed under MIT; the engine and game resources come from your local installation.
 
 Original engine code and a career match's complete conditions are separate considerations. This tool standardizes starting states; inputs, random states and in-match interventions affect results. Evidence and validation scope are described in [Simulation Fidelity](docs/SIMULATION_FIDELITY.md).
 

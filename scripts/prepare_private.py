@@ -18,19 +18,22 @@ ASSETS = (
 )
 RELEASE_SHA256 = 'b18594de3fcfecbb520e73c86555e122eb899dbadc2ff3402dd0f839329f1614'
 PAYLOAD_SHA256 = '8ec66ee7528d0ad60161207b93fedee2ec5cf97dc73af9314d719c289070fc6d'
+TRUSTED_RELEASES = {RELEASE_SHA256: PAYLOAD_SHA256,
+                    'e05f81c8100e626bbff838e04e4c8cb9b962e5158a7c6c3c918cde06f95cec22': 'd184d2a0d0b5866ad35e473996536a88cec86c1355754687d1f394165ecec26d'}
 
 
 def prepare_release(executable):
     """Read the known release's embedded data without executing the EXE."""
     raw = Path(executable).read_bytes()
-    if hashlib.sha256(raw).hexdigest() != RELEASE_SHA256:
-        raise ValueError('Expected the original v1103.2 release EXE; SHA256 mismatch')
+    expected_payload = TRUSTED_RELEASES.get(hashlib.sha256(raw).hexdigest())
+    if expected_payload is None:
+        raise ValueError('Expected an official v1103.2 or v1106 release EXE; SHA256 mismatch')
     start, end = raw.find(b'PK\x03\x04'), raw.rfind(b'PK\x05\x06')
     if start < 0 or end < start or end + 22 > len(raw):
         raise ValueError('Embedded payload not found')
     comment_size = struct.unpack_from('<H', raw, end + 20)[0]
     payload = raw[start:end + 22 + comment_size]
-    if hashlib.sha256(payload).hexdigest() != PAYLOAD_SHA256:
+    if hashlib.sha256(payload).hexdigest() != expected_payload:
         raise ValueError('Embedded payload checksum mismatch')
     with zipfile.ZipFile(io.BytesIO(payload)) as archive:
         members = [('engine/' + name, ROOT / 'private/engine' / name) for name in ASSETS]
@@ -40,7 +43,7 @@ def prepare_release(executable):
         for name, target in members:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(archive.read(name))
-    print('Prepared local inputs from verified v1103.2 EXE; executable was not run.')
+    print('Prepared local inputs from verified release EXE; executable was not run.')
 
 
 def prepare(source, catalog):
@@ -61,7 +64,7 @@ def prepare(source, catalog):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--release-exe', type=Path, help='Original v1103.2 EXE downloaded from Releases')
+    parser.add_argument('--release-exe', type=Path, help='v1103.2 or v1106 EXE downloaded from Releases')
     parser.add_argument('--assets-root', type=Path,
                         help='Existing engine workspace, not the game installation')
     parser.add_argument('--catalog', type=Path,
