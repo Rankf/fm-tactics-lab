@@ -16,7 +16,7 @@ Run these commands from the repository root:
 
 ```powershell
 py -3.12 -m venv .venv
-.venv\Scripts\python.exe scripts/prepare_private.py --release-exe "D:\Downloads\FM27战术推演_v1103.2.exe"
+.venv\Scripts\python.exe scripts/prepare_private.py --release-exe "D:\Downloads\FM27-Tactics-Lab-v1103.2.exe"
 ```
 
 The script checks the original EXE and embedded payload SHA256, then reads only the named input assets into ignored `private/` directories. It does not execute the EXE. An existing matching asset directory can alternatively be supplied with `--assets-root` and `--catalog`.

@@ -10,7 +10,7 @@
 
 The original executable is identical to the previously accepted compatibility-startup build. Its Python and UI sources were recovered from that payload. The matching native build snapshot contains 77 compatibility ranges, totalling 69,675 bytes. Public metadata stores addresses, lengths and hashes; original comparison bytes are generated locally.
 
-The source launcher removes the workstation-specific fallback path. Build scripts are newly organized for external contributors. The release EXE is not rebuilt or renamed.
+The source launcher removes the workstation-specific fallback path. Build scripts are newly organized for external contributors. The release EXE is not rebuilt. GitHub download name: `FM27-Tactics-Lab-v1103.2.exe`; its bytes and SHA256 are unchanged.
 
 ## Historical packaged acceptance
 

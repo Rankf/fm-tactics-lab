@@ -37,7 +37,7 @@
 
 ## 下载与启动
 
-在 [Releases](https://github.com/lqf0624/fm-tactics-lab/releases/latest) 下载 **`FM27战术推演_v1103.2.exe`**。这是本次公开发布的桌面版本，保留原始文件和版本号。存档对战功能留在后续开发版本中。
+在 [Releases](https://github.com/lqf0624/fm-tactics-lab/releases/latest) 下载 **`FM27-Tactics-Lab-v1103.2.exe`**。这是本次公开发布的桌面版本，保留原始 EXE 内容和版本号，下载文件使用英文名。存档对战功能留在后续开发版本中。
 
 
 准备好可正常运行的 FM27，打开 Steam 并登录拥有游戏的账号，再启动桌面 EXE。工具会查找本地游戏；也可以在顶部引擎设置中，手动选择包含 `fm_Data` 和 `shared` 的游戏根目录。

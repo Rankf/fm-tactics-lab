@@ -32,7 +32,7 @@ Each batch uses a sequence of random seeds. When comparing a saved reference wit
 
 ## Download and launch
 
-Download **`FM27战术推演_v1103.2.exe`** from [Releases](https://github.com/lqf0624/fm-tactics-lab/releases/latest). This release preserves the original desktop binary and version number. Career-save versus mode remains in later development versions.
+Download **`FM27-Tactics-Lab-v1103.2.exe`** from [Releases](https://github.com/lqf0624/fm-tactics-lab/releases/latest). This release preserves the original desktop binary and version number. Career-save versus mode remains in later development versions.
 
 Install FM27, open Steam and sign in to the account that owns the game, then launch the EXE. The tool looks for your installation automatically. You can also select the game root containing `fm_Data` and `shared` in the engine settings at the top.
 
