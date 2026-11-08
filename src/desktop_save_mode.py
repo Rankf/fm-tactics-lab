@@ -1,6 +1,7 @@
 """Save-backed team inputs. Stored plans never masquerade as current AI choices."""
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor,CancelledError
+import base64
 import copy
 import hashlib
 import json
@@ -24,6 +25,7 @@ import desktop_static_plans
 import desktop_observed_plans
 import desktop_coach_presets
 import desktop_source_plans
+import desktop_save_export
 from desktop_storage import require_space
 from desktop_save_compat import PROFILE as READER_PROFILE
 
@@ -61,6 +63,26 @@ def choose_save_file():
     code=api.CommDlgExtendedError()
     if code: raise ValueError('无法打开存档选择器，错误码 '+hex(code))
     return None
+
+
+def choose_folder():
+    if sys.platform!='win32':raise ValueError('目录选择仅在 Windows 运行期可用')
+    import ctypes
+    from ctypes import wintypes as w
+    class BrowseInfo(ctypes.Structure):
+        _fields_=[('owner',w.HWND),('root',ctypes.c_void_p),('display',w.LPWSTR),('title',w.LPCWSTR),
+            ('flags',w.UINT),('callback',ctypes.c_void_p),('data',ctypes.c_void_p),('image',ctypes.c_int)]
+    user=ctypes.WinDLL('user32',use_last_error=True);shell=ctypes.WinDLL('shell32',use_last_error=True);ole=ctypes.WinDLL('ole32',use_last_error=True)
+    user.GetForegroundWindow.restype=w.HWND
+    shell.SHBrowseForFolderW.argtypes=[ctypes.POINTER(BrowseInfo)];shell.SHBrowseForFolderW.restype=ctypes.c_void_p
+    shell.SHGetPathFromIDListW.argtypes=[ctypes.c_void_p,w.LPWSTR];shell.SHGetPathFromIDListW.restype=w.BOOL
+    ole.CoTaskMemFree.argtypes=[ctypes.c_void_p]
+    buffer=ctypes.create_unicode_buffer(32768);value=BrowseInfo()
+    value.owner=user.GetForegroundWindow();value.title='选择导出战术的文件夹';value.flags=0x0001|0x0010|0x0040
+    pidl=shell.SHBrowseForFolderW(ctypes.byref(value))
+    if not pidl:return None
+    try:return buffer.value if shell.SHGetPathFromIDListW(pidl,buffer) else None
+    finally:ole.CoTaskMemFree(pidl)
 
 
 class SaveLibrary:
@@ -222,6 +244,98 @@ class SaveLibrary:
                            for i,t in enumerate(data['tactics']) if t.get('club_uid')==club and t.get('team_slot')==0],
                 'selections':[s for s in data['selections'] if s.get('club_uid')==club and s.get('team_slot')==0],
                 'source_date':data['date']}
+
+    def _source(self, key, folder, data):
+        path=read(folder/'selected_source.json')['path']if(folder/'selected_source.json').exists()else data['source']
+        return {'save_id':key,'source':path,'source_sha256':data['source_sha256'],'date':data['date'],'build':data['build']}
+
+    def stored_tactics(self, key, club):
+        folder=self.folder(key);data=dataset(folder/'dataset.json');club=int(club)
+        return [{'key':f'stored:{i}','index':i,'name':t['name'],'available':bool(t.get('raw_plan'))}
+                for i,t in enumerate(data['tactics'])if t.get('club_uid')==club and t.get('team_slot')==0 and t.get('raw_plan')]
+
+    def export_targets(self, key, club):
+        folder=self.folder(key);data=dataset(folder/'dataset.json');club=int(club)
+        state=self.begin_opponents(key,club)
+        if state.get('status')=='reading':return {'status':'reading','stage':state.get('stage','正在读取同联赛教练偏好')}
+        if state.get('status')=='error':return {'status':'error','stage':state.get('stage')or'教练偏好读取失败'}
+        report=self.inspect_opponents(key,club)
+        names={c['uid']:c.get('short_name')or c.get('name')or str(c['uid'])for c in data['clubs']}
+        opponents=[]
+        for row in report.get('opponents')or[]:
+            coach=row.get('coach')if isinstance(row.get('coach'),dict)else {}
+            opponents.append({'key':row.get('key'),'club_uid':row.get('club_uid'),'name':row.get('name'),
+                'tactic_name':coach.get('preset_name')or row.get('tactic_name')or'教练偏好预设',
+                'source':row.get('source'),'available':bool(row.get('available'))})
+        failures=[]
+        for item in report.get('failures')or[]:
+            failures.append({'club_uid':item.get('club_uid'),'name':item.get('name'),'error':item.get('error','教练偏好预设尚不可用')})
+        covered={f['club_uid']for f in failures}
+        for item in report.get('unrecovered_clubs')or[]:
+            if item.get('club_uid')in covered:continue
+            failures.append({'club_uid':item.get('club_uid'),'name':item.get('name'),'error':item.get('reason','教练偏好预设尚不可用')})
+        return {'status':'complete','own':{'club_uid':club,'name':names.get(club,str(club)),
+                'tactics':self.stored_tactics(key,club)},
+            'opponents':opponents,'same_league_clubs':report.get('same_league_clubs',0),'failures':failures}
+
+    def export_tactics(self, key, club, targets, directory):
+        folder=self.folder(key);data=dataset(folder/'dataset.json');club=int(club)
+        if not isinstance(targets,(list,tuple))or not targets:raise ValueError('请选择要导出的战术')
+        if len(targets)>desktop_save_export.MAX_FILES:raise ValueError('一次最多导出 '+str(desktop_save_export.MAX_FILES)+' 套战术')
+        if any(not isinstance(t,str)or not t for t in targets)or len(set(targets))!=len(targets):raise ValueError('战术选择无效，不能重复')
+        clubs={c['uid']:c.get('short_name')or c.get('name')or str(c['uid'])for c in data['clubs']}
+        if club not in clubs:raise ValueError('所选球队不在当前存档')
+        rows=[];failures=[];coach_rows={};coach_loaded=False;coach_error=None
+        for target in targets:
+            try:
+                if target.startswith('stored:'):row=self._stored_row(key,data,club,target)
+                elif target.startswith('coach:'):
+                    if not coach_loaded:
+                        coach_loaded=True
+                        try:coach_rows={'coach:'+str(t['team_id']):t for t in desktop_coach_presets.ensure(self,key)['teams']}
+                        except Exception as error:coach_error=error
+                    if coach_error is not None:raise ValueError(str(coach_error))
+                    entry=coach_rows.get(target)
+                    if entry is None:raise ValueError('教练预设不属于当前存档')
+                    row=self._coach_row(key,target,entry)
+                else:raise ValueError('未知导出目标')
+            except Exception as error:
+                failure={'target':target,'club_uid':None,'club':None,'tactic_name':None,'error':str(error)}
+                if target.startswith('stored:'):
+                    failure.update(club_uid=club,club=clubs.get(club))
+                    suffix=target.split(':',1)[1]
+                    if suffix.isdigit()and int(suffix)<len(data['tactics']):failure['tactic_name']=data['tactics'][int(suffix)].get('name')
+                elif target in coach_rows:
+                    entry=coach_rows[target];failure.update(club_uid=entry['club_uid'],club=entry['name'],
+                        tactic_name='教练偏好预设 · '+entry['preset_name'])
+                failures.append(failure);continue
+            rows.append(row)
+        if not rows:raise ValueError('所选战术全部导出失败：'+'；'.join(f['error']for f in failures[:3]))
+        result=desktop_save_export.write(directory,self._source(key,folder,data),rows)
+        result['failures']=failures
+        return result
+
+    def _stored_row(self, key, data, club, target):
+        index=target.split(':',1)[1]
+        if not index.isdigit():raise ValueError('未知存档战术')
+        index=int(index);tactics=data['tactics']
+        if not 0<=index<len(tactics):raise ValueError('未知存档战术')
+        tactic=tactics[index]
+        if tactic.get('club_uid')!=club or tactic.get('team_slot')!=0 or not tactic.get('raw_plan'):raise ValueError('该战术不是已解析的一线队存储战术')
+        name=next((c.get('short_name')or c.get('name')for c in data['clubs']if c['uid']==club),None)or str(club)
+        scenario=copy.deepcopy(self.app.DEFAULT);team=scenario['teams'][0]
+        self.apply_plan(team,self.parsed_plan(key,index))
+        team.update(name=name,tactic_name=tactic['name'])
+        exported=self.app.export_fmf({'side':0,'scenario':self.app.validate_scenario(scenario),'name':tactic['name']})
+        return {'club_uid':club,'club':name,'target':target,'tactic_name':tactic['name'],
+            'payload':base64.b64decode(exported['file_base64'],validate=True),'report':exported['report']}
+
+    def _coach_row(self, key, target, entry):
+        team=desktop_coach_presets.preset_tactic(self,key,target)
+        scenario=copy.deepcopy(self.app.DEFAULT);scenario['teams'][1]=team
+        exported=self.app.export_fmf({'side':1,'scenario':self.app.validate_scenario(scenario),'name':team['tactic_name']})
+        return {'club_uid':entry['club_uid'],'club':entry['name'],'target':target,'tactic_name':team['tactic_name'],
+            'payload':base64.b64decode(exported['file_base64'],validate=True),'report':exported['report']}
 
     def native(self, args, folder, name, extra=None, discover_tactic_boundary=False):
         self.app.desktop_engine.require_available(self.app.ENGINE_COMPATIBILITY)

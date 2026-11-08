@@ -33,7 +33,7 @@ function setSaveMode(value){
 }
 function drawSaveMode(){
  const status=saveInfo?.status;
- modePanel.innerHTML=`<div class="save-mode-top"><div class="segmented"><button data-mode="free" class="${saveMode==='free'?'active':''}">自由推演</button><button data-mode="save" class="${saveMode==='save'?'active':''}">存档对战</button></div>${saveMode==='save'?'<span class="tiny muted">真实属性 · 两阶段战术 · 多对手主客场测试</span>':''}</div>${saveMode==='save'?`<div class="save-mode-body"><label>存档完整路径<input id="career-path" value="${esc(saveInfo?.source||'')}" placeholder="例如 D:\\存档\\生涯.fm"></label><button id="career-pick" class="button">选择存档…</button><button id="career-read" class="button" ${status==='reading'?'disabled':''}>读取存档</button><span class="tiny" role="status">${esc(saveInfo?.stage||'请选择 .fm 存档；战术 FMF 仍在战术板导入')}</span>${status==='complete'?`<p class="tiny muted">存档日期 ${esc(saveInfo.date)} · 构建 ${esc(saveInfo.build)} · 当前存档属性与教练偏好</p><div class="save-team-controls"><label>我的球队<select id="career-club">${saveInfo.clubs.map(c=>`<option value="${c.uid}" ${c.uid===saveClub?'selected':''}>${esc(c.name)}（${c.players}人）${saveInfo.managed.some(m=>m.club_uid===c.uid)?' · 人类经理执教':''}</option>`).join('')}</select></label>${saveRoster?`<label>存储战术<select id="career-tactic">${saveRoster.tactics.filter(t=>t.available).map(t=>`<option value="${t.index}">${esc(t.name)}</option>`).join('')}</select></label><button id="career-load" class="button primary" ${saveRoster.tactics.some(t=>t.available)?'':'disabled'}>载入战术板</button><button id="career-lineup-open" class="button">一线队／比赛名单</button>`:''}<button id="career-opponents" class="button">选择存档对手</button></div>${saveLoaded?`<p class="tiny">已载入：${esc(state?.teams[0]?.name||'')} · ${esc(saveLoaded.tactic_name)} <button id="career-restore" class="button small">恢复导入方案</button></p><p class="tiny muted">${esc(saveLoaded.notice)}</p>`:''}${saveInfo.warnings?.length?`<details><summary>解析提示（${saveInfo.warnings.length}）</summary>${saveInfo.warnings.map(w=>`<p class="tiny">${esc(w)}</p>`).join('')}</details>`:''}<p class="tiny">已选 ${saveChosen.size} 个对手方案。每队场数沿用底部场数，主客场各半；启用对照时总场数翻倍。此模式编辑主队，运行时载入所选对手的教练偏好预设。<strong id="career-total"></strong></p>`:''}</div>`:''}`;
+ modePanel.innerHTML=`<div class="save-mode-top"><div class="segmented"><button data-mode="free" class="${saveMode==='free'?'active':''}">自由推演</button><button data-mode="save" class="${saveMode==='save'?'active':''}">存档对战</button></div>${saveMode==='save'?'<span class="tiny muted">真实属性 · 两阶段战术 · 多对手主客场测试</span>':''}</div>${saveMode==='save'?`<div class="save-mode-body"><label>存档完整路径<input id="career-path" value="${esc(saveInfo?.source||'')}" placeholder="例如 D:\\存档\\生涯.fm"></label><button id="career-pick" class="button">选择存档…</button><button id="career-read" class="button" ${status==='reading'?'disabled':''}>读取存档</button><span class="tiny" role="status">${esc(saveInfo?.stage||'请选择 .fm 存档；战术 FMF 仍在战术板导入')}</span>${status==='complete'?`<p class="tiny muted">存档日期 ${esc(saveInfo.date)} · 构建 ${esc(saveInfo.build)} · 当前存档属性与教练偏好</p><div class="save-team-controls"><label>我的球队<select id="career-club">${saveInfo.clubs.map(c=>`<option value="${c.uid}" ${c.uid===saveClub?'selected':''}>${esc(c.name)}（${c.players}人）${saveInfo.managed.some(m=>m.club_uid===c.uid)?' · 人类经理执教':''}</option>`).join('')}</select></label>${saveRoster?`<label>存储战术<select id="career-tactic">${saveRoster.tactics.filter(t=>t.available).map(t=>`<option value="${t.index}">${esc(t.name)}</option>`).join('')}</select></label><button id="career-load" class="button primary" ${saveRoster.tactics.some(t=>t.available)?'':'disabled'}>载入战术板</button><button id="career-lineup-open" class="button">一线队／比赛名单</button>`:''}<button id="career-opponents" class="button">选择存档对手</button><button id="career-export-tactics" class="button">导出球队战术</button></div>${saveLoaded?`<p class="tiny">已载入：${esc(state?.teams[0]?.name||'')} · ${esc(saveLoaded.tactic_name)} <button id="career-restore" class="button small">恢复导入方案</button></p><p class="tiny muted">${esc(saveLoaded.notice)}</p>`:''}${saveInfo.warnings?.length?`<details><summary>解析提示（${saveInfo.warnings.length}）</summary>${saveInfo.warnings.map(w=>`<p class="tiny">${esc(w)}</p>`).join('')}</details>`:''}<p class="tiny">已选 ${saveChosen.size} 个对手方案。每队场数沿用底部场数，主客场各半；启用对照时总场数翻倍。此模式编辑主队，运行时载入所选对手的教练偏好预设。<strong id="career-total"></strong></p>`:''}</div>`:''}`;
  modePanel.querySelectorAll('[data-mode]').forEach(b=>b.onclick=()=>setSaveMode(b.dataset.mode));
  if($('#career-pick'))$('#career-pick').onclick=async()=>{try{const r=await api('/api/save/pick',{});if(r.path){$('#career-path').value=r.path;$('#career-read').click();}}catch(e){toast(e.message)}};
  const readButton=$('#career-read');if(readButton)readButton.onclick=async()=>{try{const r=await api('/api/save/import',{path:$('#career-path').value});saveLoaded=null;saveRoster=null;saveChosen.clear();saveOpponents=[];saveInfo={id:r.id,status:'reading',stage:r.reused?'存档未变化，复用已解析数据':'正在读取存档',source:$('#career-path').value};if(r.reused)toast('存档未变化，已复用解析结果与对手预设');drawSaveMode();pollSave();}catch(e){toast(e.message)}};
@@ -41,6 +41,7 @@ function drawSaveMode(){
  if($('#career-load'))$('#career-load').onclick=loadSaveTeam;
  if($('#career-lineup-open'))$('#career-lineup-open').onclick=showSaveLineup;
  if($('#career-opponents'))$('#career-opponents').onclick=()=>discoverSaveOpponents();
+ if($('#career-export-tactics'))$('#career-export-tactics').onclick=showTeamExport;
  if($('#career-restore'))$('#career-restore').onclick=()=>{const saved=localStorage.getItem('fm27-career-original');if(saved&&confirm('恢复导入时的己方阵容与战术？当前修改会被替换。')){state.teams[0]=JSON.parse(saved);save();render();drawSaveMode();}};
  const countLabel=$('#count').closest('label');countLabel.firstChild.textContent=saveMode==='save'?'每队场数':'每方案场数';
  updateSaveTotal();
@@ -97,6 +98,49 @@ function enhanceOpponentPicker(dialog,report){
  const update=()=>{let ready=0,pending=0;const q=normalize(search.value);dialog.querySelectorAll('[data-opponent-row]').forEach(row=>{const uid=+row.dataset.clubUid,o=saveOpponents.find(o=>o.club_uid===uid)||requested.find(o=>o.club_uid===uid);const inScope=scope.value==='all'?o.available!==false:o.same_league;row.hidden=!inScope||(!!q&&!opponentSearchText(o).includes(q));row.style.display=row.hidden?'none':'';if(!row.hidden){if(o.available===false)pending++;else ready++;}});count.textContent=`显示 ${ready} 队可用${pending?' · '+pending+' 队暂不可用':''} · 已选 ${dialog.querySelectorAll('[data-opponent]:checked').length} 队`;empty.hidden=ready+pending>0;};
  scope.onchange=update;controls.querySelector('[data-select-visible]').onclick=()=>{list.querySelectorAll('[data-opponent-row]').forEach(row=>{const checkbox=row.querySelector('[data-opponent]');if(!row.hidden&&checkbox)checkbox.checked=true;});update();};
  search.oninput=update;dialog.querySelectorAll('[data-opponent]').forEach(c=>c.addEventListener('change',update));update();
+}
+async function saveExportTargets(){
+ for(let attempt=0;attempt<90;attempt++){
+  const report=await api('/api/save/export-targets',{id:saveInfo.id,club_uid:saveClub});
+  if(report.status!=='reading')return report;
+  await new Promise(resolve=>setTimeout(resolve,2000));
+ }
+ throw Error('导出目标读取超时，请稍后重试');
+}
+async function showTeamExport(){
+ const button=$('#career-export-tactics'),directory=localStorage.getItem('fm27-export-directory')||'';
+ if(!saveInfo?.id){toast('请先读取存档');return}
+ if(button){button.disabled=true;button.textContent='正在读取导出目标…'}
+ try{
+  const report=await saveExportTargets(),own=report.own||{},opponents=report.opponents||[],targetFailures=report.failures||[];
+  if(report.status==='error')throw Error(report.stage||'导出目标读取失败');
+  const ownTactics=own.tactics||[],available=list=>list.filter(item=>item.available!==false).length;
+  const dialog=document.createElement('dialog');dialog.className='save-dialog team-export';
+  dialog.innerHTML=`<h2>导出球队战术</h2><p class="tiny muted">己方存储战术来自存档，同联赛对手按教练偏好预设导出。</p><h3>己方存储战术</h3><p class="tiny muted">${esc(own.name||'')} · 可用 ${available(ownTactics)} / ${ownTactics.length} 套</p><div class="career-opponent-list team-export-list">${ownTactics.map(t=>`<label><input type="checkbox" data-export-own="${esc(t.key)}" ${t.available===false?'disabled':''}><span><b>${esc(t.name)}</b>${t.available===false?'<small>暂不可用</small>':''}</span></label>`).join('')||'<p>没有可导出的存储战术。</p>'}</div><h3>同联赛对手预设</h3><p class="tiny muted">可用 ${available(opponents)} 项 · 对手战术为教练偏好预设，不是当天实战还原</p><div class="save-team-controls"><button type="button" class="button small" data-select-league>全选同联赛</button><button type="button" class="button small ghost" data-select-none>全不选</button><span class="tiny muted" data-export-count></span></div><div class="career-opponent-list team-export-list">${opponents.map(o=>`<label><input type="checkbox" data-export-league="${esc(o.key)}" ${o.available===false?'disabled':''}><span><b>${esc(o.name)}</b><small>${esc(o.tactic_name)}${o.source?' · '+esc(o.source):''}</small></span></label>`).join('')||'<p>存档中没有可用的同联赛对手预设。</p>'}</div>${targetFailures.length?`<details><summary>读取失败 ${targetFailures.length} 项</summary>${targetFailures.map(f=>`<p class="tiny">${esc(f.club||f.name||'')}：${esc(f.error||'读取失败')}</p>`).join('')}</details>`:''}<div class="save-team-controls"><label>目标目录<input data-export-directory value="${esc(directory)}" placeholder="选择本机文件夹"></label><button type="button" class="button small" data-pick-folder>选择目录…</button></div><div class="team-export-result" data-export-result></div><div class="dialog-actions"><button type="button" class="button" data-close>关闭</button><button type="button" class="button primary" data-start>开始导出</button></div>`;
+  const ownBoxes=()=>[...dialog.querySelectorAll('[data-export-own]:checked')],leagueBoxes=()=>[...dialog.querySelectorAll('[data-export-league]:checked')],count=dialog.querySelector('[data-export-count]');
+  const refresh=()=>{const ownCount=ownBoxes().length,leagueCount=leagueBoxes().length;count.textContent=`已选 ${ownCount+leagueCount} 项 · 己方 ${ownCount} 套 · 对手 ${leagueCount} 项`};
+  dialog.querySelectorAll('[data-export-own],[data-export-league]').forEach(box=>box.onchange=refresh);
+  dialog.querySelector('[data-select-league]').onclick=()=>{dialog.querySelectorAll('[data-export-league]').forEach(box=>box.checked=!box.disabled);refresh()};
+  dialog.querySelector('[data-select-none]').onclick=()=>{dialog.querySelectorAll('[data-export-own],[data-export-league]').forEach(box=>box.checked=false);refresh()};
+  dialog.querySelector('[data-pick-folder]').onclick=async()=>{try{const r=await api('/api/save/pick-folder',{});if(r.path)dialog.querySelector('[data-export-directory]').value=r.path}catch(e){toast('选择目录失败：'+e.message)}};
+  const start=dialog.querySelector('[data-start]');
+  start.onclick=async()=>{
+   const targets=[...ownBoxes(),...leagueBoxes()].map(box=>box.dataset.exportOwn||box.dataset.exportLeague),target=dialog.querySelector('[data-export-directory]').value.trim(),result=dialog.querySelector('[data-export-result]');
+   if(!targets.length){toast('请至少选择一项导出目标');return}
+   if(!target){toast('请填写或选择导出目录');return}
+   start.disabled=true;start.textContent='正在导出中…';
+   try{
+    const r=await api('/api/save/export-tactics',{id:saveInfo.id,club_uid:saveClub,targets,directory:target}),failures=r.failures||[];
+    localStorage.setItem('fm27-export-directory',r.directory||target);
+    result.innerHTML=`<div class="notice">已写入 ${r.files?.length||0} 个战术文件到 ${esc(r.directory||target)}</div>${failures.length?`<details open><summary>失败 ${failures.length} 项</summary>${failures.map(f=>`<p class="tiny">${esc(f.club||'')}${f.tactic_name?' · '+esc(f.tactic_name):''}：${esc(f.error||'写入失败')}</p>`).join('')}</details>`:'<p class="tiny muted">全部文件已写入并核对。</p>'}'`;
+    toast(`已导出 ${r.files?.length||0} 个战术文件`);
+   }catch(e){toast('导出失败：'+e.message)}
+   finally{start.disabled=false;start.textContent='开始导出'}
+  };
+  refresh();
+  dialog.querySelector('[data-close]').onclick=()=>dialog.close();dialog.onclose=()=>dialog.remove();dialog.showModal();
+ }catch(e){toast('球队战术列表读取失败：'+e.message)}
+ finally{if(button){button.disabled=false;button.textContent='导出球队战术'}}
 }
 const saveApiPrevious=api;
 function opponentPreviewBoard(t,p){
