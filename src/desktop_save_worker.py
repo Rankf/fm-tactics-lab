@@ -213,7 +213,7 @@ def main(source, folder):
         retained_keys={str(c) for c in retained_clubs}
         counts={k:v for k,v in counts.items()if k in retained_keys}
         first_counts={k:v for k,v in first_counts.items()if k in retained_keys}
-        result = {'schema':3, 'player_loading':'managed-first-selective-v2','opponent_loading':'same-league-coach-only-v2', 'reader_compatibility_profile':desktop_save_compat.PROFILE,
+        result = {'schema':4, 'player_loading':'managed-first-selective-v2','opponent_loading':'same-league-coach-only-v2', 'reader_compatibility_profile':desktop_save_compat.PROFILE,
                   'source':str(source), 'source_sha256':digest,
                   'date':str(info.game_date), 'build':info.build,
                   'managed':managed, 'clubs':clubs, 'player_counts':counts,'first_team_counts':first_counts,

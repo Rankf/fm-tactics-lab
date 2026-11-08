@@ -144,7 +144,7 @@ class SaveLibrary:
                 if not re.search(r'"source_sha256"\s*:\s*"'+digest+'"',prefix):continue
                 if not re.search(r'"reader_compatibility_profile"\s*:\s*"'+re.escape(READER_PROFILE)+'"',prefix):continue
                 data=dataset(folder/'dataset.json')
-                if data['source_sha256']!=digest or data.get('schema')!=3 or 'first_team_counts'not in data:continue
+                if data['source_sha256']!=digest or data.get('schema')!=4 or 'first_team_counts'not in data:continue
                 paths=[folder/'player_index.json',folder/'rosters']
                 paths.extend(folder/c['path']for c in data['caches'])
                 paths.extend(folder/t['raw_plan']for t in data['tactics']if t.get('raw_plan'))
@@ -195,6 +195,7 @@ class SaveLibrary:
         if value['status'] != 'complete':
             return value
         data = dataset(folder/'dataset.json')
+        if data.get('schema')!=4:raise ValueError('此存档缓存来自旧版本，请重新读取存档')
         if 'first_team_counts' not in data:raise ValueError('此缓存尚未区分一线队，请重新导入存档')
         counts = {int(k):v for k,v in data['first_team_counts'].items() if k!='None'}
         value.update(date=data['date'],build=data['build'],source=data['source'],source_sha256=data['source_sha256'],

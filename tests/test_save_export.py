@@ -233,7 +233,7 @@ class SaveLibraryLeagueTests(unittest.TestCase):
 
     def save(self):
         key='0123456789abcdef';folder=self.lib.root/key;folder.mkdir(parents=True)
-        data={'schema':3,'source':SOURCE['source'],'source_sha256':SOURCE['source_sha256'],'date':SOURCE['date'],
+        data={'schema':4,'source':SOURCE['source'],'source_sha256':SOURCE['source_sha256'],'date':SOURCE['date'],
               'build':SOURCE['build'],'tactics':[],'fixtures':[],'selections':[],'caches':[],'managed':[],
               'clubs':[{'uid':1,'name':'甲队','short_name':'甲','nation_id':14},
                        {'uid':2,'name':'乙队','short_name':'乙','nation_id':14},
@@ -394,14 +394,14 @@ class ReusableSourceTests(unittest.TestCase):
     def tearDown(self):
         desktop_save_mode.dataset.cache_clear();self.holder.cleanup()
 
-    def test_requires_schema_3(self):
+    def test_requires_schema_4(self):
         digest='b'*64;folder=self.lib.root/'fedcba9876543210';folder.mkdir(parents=True)
         data={'source':SOURCE['source'],'source_sha256':digest,'reader_compatibility_profile':desktop_save_compat.PROFILE,
-              'first_team_counts':{},'caches':[],'tactics':[],'clubs':[],'schema':2}
+              'first_team_counts':{},'caches':[],'tactics':[],'clubs':[],'schema':3}
         self.lib.write(folder/'progress.json',{'status':'complete'})
         self.lib.write(folder/'dataset.json',data)
         self.assertIsNone(self.lib.reusable_source(digest))
-        data['schema']=3
+        data['schema']=4
         self.lib.write(folder/'dataset.json',data)
         (folder/'player_index.json').write_text('{}',encoding='utf8');(folder/'rosters').mkdir()
         desktop_save_mode.dataset.cache_clear()
