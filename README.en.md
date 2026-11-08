@@ -75,7 +75,7 @@ Open **战术板** (Tactics Board):
 - Drag shirts to swap players while keeping roles, duties and instructions attached to their positions. Moving to an empty position prompts for confirmation if any settings need to change.
 - Adjust mentality, passing, pressing and other team instructions.
 - Configure or import set-piece routines separately in **定位球与职责** (Set Pieces and Responsibilities).
-- **Away tactic pool**: add same-league opponent presets from **存档战术** in one click. With random mode enabled in the bottom bar, each match draws one away tactic by weight.
+- **Away tactic pool**: import local FMF tactics on the pool page, or add same-league opponent presets from **存档战术** in one click. With random mode enabled in the bottom bar, each match draws one away tactic by weight.
 
 Imported tactics remain editable. When the away tactic pool is enabled, every away player's ability attributes can be unified to a configurable interface value (15 by default), while starters receive maximum positional familiarity for the drawn tactic's positions. Draws are derived from the task seed and reproduce within the same experiment.
 
