@@ -11,6 +11,7 @@ playersView = function(){
  return teamBulkPlayersPrevious().replace('<div class="player-summary">', controls+'<div class="player-summary">');
 };
 
+function teamBulkRoster(t){if(t.squad&&typeof syncSquadFromMatch==='function')syncSquadFromMatch(t);return t.squad||t.players;}
 function applyTeamBulk(kind, value, position){
  if(kind!=='attributes' && kind!=='position')throw Error('未知批量编辑操作');
  if(kind==='attributes' && (!Number.isFinite(value)||value<1||value>20)){
@@ -21,9 +22,9 @@ function applyTeamBulk(kind, value, position){
   toast('请选择有效位置，并输入 0–20 之间的整数熟练度');return false;
  }
  const ids=kind==='position'?[selected.id]:catalog.attributes.filter(a=>!a.position).map(a=>a.id);
- const t=team();
- teamBulkUndo[side]={owner:t,kind,ids,players:t.players.map(p=>({native_id:p.native_id,attributes:ids.map(id=>p.attributes[id]),personality:kind==='attributes'?Object.fromEntries(teamBulkPersonality.map(k=>[k,{present:Object.hasOwn(p.native_profile||{},k),value:p.native_profile?.[k]}])):null}))};
- for(const p of t.players){
+ const t=team(),roster=teamBulkRoster(t);
+ teamBulkUndo[side]={owner:t,kind,ids,players:roster.map(p=>({native_id:p.source_uid??p.native_id,attributes:ids.map(id=>p.attributes[id]),personality:kind==='attributes'?Object.fromEntries(teamBulkPersonality.map(k=>[k,{present:Object.hasOwn(p.native_profile||{},k),value:p.native_profile?.[k]}])):null}))};
+ for(const p of roster){
   for(const id of ids)p.attributes[id]=kind==='position'?value:Math.round(value*5);
   if(kind==='attributes'){
    p.native_profile??={};
@@ -32,22 +33,23 @@ function applyTeamBulk(kind, value, position){
  }
  if(kind==='attributes')teamBulkValues[side]=value;
  else{teamBulkPositions[side]=position;teamBulkPositionValues[side]=value;}
- save();render();toast(`${t.name}：已将 ${t.players.length} 名球员${kind==='position'?selected.label+'熟练度设为 '+value:'全属性设为 '+value}`);
+ if(t.squad)syncMatchFromSquad(t);
+ save();render();toast(`${t.name}：已将 ${roster.length} 名球员${kind==='position'?selected.label+'熟练度设为 '+value:'全属性设为 '+value}`);
  return true;
 }
 
 function undoTeamBulk(){
- const before=teamBulkUndo[side],t=team();if(!before)return;
- if(before.owner!==t||t.players.length!==before.players.length||t.players.some((p,i)=>p.native_id!==before.players[i].native_id)){
+ const before=teamBulkUndo[side],t=team();if(!before)return;const roster=teamBulkRoster(t);
+ if(before.owner!==t||roster.length!==before.players.length||roster.some((p,i)=>(p.source_uid??p.native_id)!==before.players[i].native_id)){
   teamBulkUndo[side]=null;render();toast('名单已变化，无法应用上次批量修改的撤销记录');return;
  }
- t.players.forEach((p,i)=>{
+ roster.forEach((p,i)=>{
   const old=before.players[i];before.ids.forEach((id,j)=>p.attributes[id]=old.attributes[j]);
   if(old.personality)for(const [key,entry]of Object.entries(old.personality)){
    if(entry.present)p.native_profile[key]=entry.value;else delete p.native_profile[key];
   }
  });
- teamBulkUndo[side]=null;save();render();toast('已撤销本队上次批量修改');
+ teamBulkUndo[side]=null;if(t.squad)syncMatchFromSquad(t);save();render();toast('已撤销本队上次批量修改');
 }
 
 const teamBulkBindPrevious=bind;

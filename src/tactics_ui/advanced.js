@@ -2,27 +2,29 @@
 const baseRender=render,baseBind=bind;
 const PI_GROUPS=()=>Object.fromEntries(catalog.player_instructions.map(g=>[g.id,g]));
 function policyFor(c,p=phase,i=slot,s=side){const duty=c.duty??defaults.teams[s].phases[p][i].duty;return catalog.pi_policies[`${p}:${c.position}:${c.role}:${duty}`]?.['1a080000']||'1'.repeat(43)}
-function allowedRoles(c,p=phase,s=side){const cells=state.teams[s].phases[p],count=cells.filter(x=>positions()[x.position].mask&16).length,dm=cells.filter(x=>positions()[x.position].mask&128).length;return catalog.role_eligibility_context[`${count>=3?3:0}:${dm===1?1:0}`][c.position][p]}
-function harmonizeCell(c,p,i,s){
+function allowedRoles(c,p=phase,s=side,cells=state.teams[s].phases[p]){const count=cells.filter(x=>positions()[x.position].mask&16).length,dm=cells.filter(x=>positions()[x.position].mask&128).length;return catalog.role_eligibility_context[`${count>=3?3:0}:${dm===1?1:0}`][c.position][p]}
+function retainedSourceCell(c,p,s){return state.teams[s].native_source_plan?.value?.phases?.[p]?.find(b=>['position','role','duty'].every(k=>b[k]===c[k]))}
+function harmonizeCell(c,p,i,s,cells=state.teams[s].phases[p]){
  if(state.rules!=='game')return;
- const allowed=allowedRoles(c,p,s);
- if(!allowed.includes(c.role)){const preferred=fallbackRole(c.position,p);c.role=allowed.includes(preferred)?preferred:allowed[0];c.duty='0'}
+ const allowed=allowedRoles(c,p,s,cells);
+ if(!retainedSourceCell(c,p,s)&&!allowed.includes(c.role)){const preferred=fallbackRole(c.position,p);c.role=allowed.includes(preferred)?preferred:allowed[0];c.duty='0'}
  const policy=policyFor(c,p,i,s);
- for(const g of catalog.player_instructions){const value=c.instructions[g.id];if(value&&(g.phase!==p||policy[value]!=='0'))c.instructions[g.id]=0}
+ const retained=retainedSourceCell(c,p,s);
+ for(const g of catalog.player_instructions){const value=c.instructions[g.id];if(value&&(g.phase!==p||policy[value]!=='0')&&retained?.instructions[g.id]!==value)c.instructions[g.id]=0}
 }
-function harmonizeAll(){state.teams.forEach((t,s)=>{t.phases.forEach((cells,p)=>cells.forEach((c,i)=>harmonizeCell(c,p,i,s)));if(teamConflict(t.instructions))t.instructions[31]=catalog.team_instructions.find(g=>g.id===31).options.find(o=>o.native_bit===0).id})}
+function harmonizeAll(){state.teams.forEach((t,s)=>{t.phases.forEach((cells,p)=>cells.forEach((c,i)=>harmonizeCell(c,p,i,s)));if(teamConflict(t.instructions)&&JSON.stringify(t.native_source_plan?.value?.instructions)!==JSON.stringify(t.instructions))t.instructions[31]=catalog.team_instructions.find(g=>g.id===31).options.find(o=>o.native_bit===0).id})}
 function teamConflict(instructions){const bits=new Set(catalog.team_instructions.map(g=>g.options.find(o=>o.id===instructions[g.id]).native_bit));return catalog.team_conflicting_bits.some(([a,b])=>bits.has(a)&&bits.has(b))}
 function teamRuleControls(){if(view!=='tactics')return;$$('[data-ti]').forEach(e=>{const g=+e.dataset.ti;[...e.options].forEach(o=>{o.disabled=teamConflict({...team().instructions,[g]:+o.value});o.title=o.disabled?'与另一项同侧内套／外套指令互斥':''});const old=e.onchange;e.onchange=event=>{if(teamConflict({...team().instructions,[g]:+event.target.value})){toast('同侧内套和外套不能同时启用');render();return}old?.(event);render()}})}
 function policyControls(){
  if(view!=='tactics')return;
- const strict=state.rules==='game',c=current(),policy=policyFor(c),allowed=allowedRoles(c);
- const selector=$('#slot-role');if(selector)selector.innerHTML=catalog.roles.filter(r=>allowed.includes(r.id)).map(r=>`<option value="${esc(r.id)}" ${r.id===c.role?'selected':''}>${esc(r.label)}</option>`).join('');
+ const strict=state.rules==='game',c=current(),policy=policyFor(c),allowed=allowedRoles(c),retained=retainedSourceCell(c,phase,side);
+ const selector=$('#slot-role');if(selector)selector.innerHTML=catalog.roles.filter(r=>allowed.includes(r.id)||(retained&&r.id===c.role)).map(r=>`<option value="${esc(r.id)}" ${r.id===c.role?'selected':''}>${esc(r.label)}</option>`).join('');
  $$('[data-pi]').forEach(e=>{
   const g=PI_GROUPS()[e.dataset.pi],label=e.closest('label');label.hidden=strict&&g.phase!==phase;
   const forced=g.options.find(o=>o.id&&policy[o.id]==='3'),editable=g.options.some(o=>o.id&&policy[o.id]==='0');
   e.disabled=strict&&(!!forced||!editable);
   [...e.options].forEach(o=>{o.disabled=strict&&+o.value!==0&&policy[+o.value]!=='0'});
-  if(strict&&forced)e.value=String(forced.id);
+  if(strict&&forced&&retained?.instructions[g.id]!==c.instructions[g.id])e.value=String(forced.id);
   const note=document.createElement('small');note.className='constraint-note';
   if(strict&&forced)note.textContent='🔒 角色固定';else if(strict&&!editable)note.textContent='🔒 该角色不使用此指令';
   if(note.textContent)label.append(note);

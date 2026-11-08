@@ -42,6 +42,8 @@ def normalize(value,side,roster_size):
     if base[k]==255:
      if row[k]!=255:raise ValueError('该类型定位球不使用此发球策略')
      r[k]=255
+    elif k=='strategy' and (kind,row[k]) in ((5,3),(7,6),(8,3)):
+     r[k]=row[k]
     else:r[k]=integer(row[k],0,1 if k=='swing'else 2)
    priority=row['priority']
    if not isinstance(priority,list)or sorted(priority)!=sorted(base['priority']):raise ValueError('定位球分配顺序必须保留原版角色类别')

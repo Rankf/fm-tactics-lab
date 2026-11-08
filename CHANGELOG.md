@@ -1,5 +1,12 @@
 # Changelog
 
+## v1108.5 — 2026-11-08
+
+- Import career saves, edit match squads and run home and away matches against selectable same-league opponents.
+- Preview both tactical phases using presets matched to the head coach's saved preferences.
+- Preserve position settings when swapping players, correct Chinese transition labels and add experiment management.
+- Add optional manual tactical effectiveness settings for both sides.
+
 ## v1106 — 2026-11-06
 
 - Add actual interface screenshots to both player guides.

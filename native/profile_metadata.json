@@ -4589,6 +4589,114 @@
       "purpose": "desktop tactical plan serializer",
       "size": 1349,
       "sha256": "198fb76b10037df3edbcf0003066b0d862280a7c5f4ffe6f718d7e397dd21128"
+    },
+    {
+      "rva": 77067232,
+      "purpose": "saved fixture original reader/factory",
+      "size": 130,
+      "sha256": "b780a9c95a677ef9d6ffef672a94efd637236c7e6e9c4ccd35fbcbf135b77963"
+    },
+    {
+      "rva": 77375376,
+      "purpose": "saved fixture original reader/factory",
+      "size": 2400,
+      "sha256": "a116f2bdd718d012592282c839db015c810ab8ffea667a83b34004dd5ecdfe9f"
+    },
+    {
+      "rva": 58132064,
+      "purpose": "saved fixture original reader/factory",
+      "size": 1166,
+      "sha256": "21a29447048fa8122b73cb9a2dcb3ab07271d5c5c4143cb6c90d9e543d7d9863"
+    },
+    {
+      "rva": 14645472,
+      "purpose": "saved fixture factory jump",
+      "size": 5,
+      "sha256": "a17a861131cab8046c28b8b56e3eb8bd696fc96f720627b0658a00ddbe1717d1"
+    },
+    {
+      "rva": 158890256,
+      "purpose": "saved fixture original reader/factory",
+      "size": 45,
+      "sha256": "d682c1dc889feb7ac33c7f51c6db49f8d9b5ee52d1ebdd0ffb3d169e3636fb76"
+    },
+    {
+      "rva": 14645792,
+      "purpose": "saved fixture original reader/factory",
+      "size": 293,
+      "sha256": "ea5c6604949817a4602471f54bc90db6887d25b63aa5ce12ac8763eabebbcc2f"
+    },
+    {
+      "rva": 14646944,
+      "purpose": "saved fixture original reader/factory",
+      "size": 731,
+      "sha256": "02e92ffcfd5b669c68342cb7f0969625601baa8dbf9ccf3e069dc8d3ef103b5c"
+    },
+    {
+      "rva": 77399920,
+      "purpose": "saved fixture original reader/factory",
+      "size": 3019,
+      "sha256": "875603414521d871ec1c1d5a3cb2e4c45b4569b3f1c62c8640827a59b043da24"
+    },
+    {
+      "rva": 55128512,
+      "purpose": "saved fixture original reader/factory",
+      "size": 901,
+      "sha256": "3bee7672cb663acb1860a9a0fe726af6e9c5c65ad050186893fab79f61b7866d"
+    },
+    {
+      "rva": 16459136,
+      "purpose": "saved fixture original reader/factory",
+      "size": 1478,
+      "sha256": "407c468f3164634e0f3f2946d09be43081bdb2bc895be039d41192f6c8b16cb4"
+    },
+    {
+      "rva": 16457744,
+      "purpose": "saved fixture factory jump",
+      "size": 5,
+      "sha256": "367dc50416c7a514599d6be1b179ce70ba6c6f485ed1d41c3e7efc2d09f49fd7"
+    },
+    {
+      "rva": 168287232,
+      "purpose": "saved fixture original reader/factory",
+      "size": 410,
+      "sha256": "c098987fbbfd4f100b1f6b8f6e76db3ec1baf3293f254829ab939c8c795e1f25"
+    },
+    {
+      "rva": 28518160,
+      "purpose": "saved fixture original reader/factory",
+      "size": 616,
+      "sha256": "a066be171c04965e51d29e9f51421f0aa2247514024405ee402a5a10f95f4734"
+    },
+    {
+      "rva": 78103888,
+      "purpose": "saved fixture original reader/factory",
+      "size": 290,
+      "sha256": "acefac0e04dce340097f9ae7cdd00a2d3f404aa2baf3ce31495405ad00acad97"
+    },
+    {
+      "rva": 66800384,
+      "purpose": "saved fixture original reader/factory",
+      "size": 3092,
+      "sha256": "ae031b5deee32f2da227bc7530585bba5ddf4e5b8abf86430dc5bf2f4b1b27cd"
+    },
+    {
+      "rva": 77319280,
+      "purpose": "saved fixture factory jump",
+      "size": 5,
+      "sha256": "482ec328bd4e0b82a3e9d4a2d4f245ca5b9448449dbdf336af255ab7f3a503f6"
+    },
+    {
+      "rva": 383229456,
+      "purpose": "saved fixture original reader/factory",
+      "size": 56,
+      "sha256": "29a6071186a76d09fa1efc7053b28e5cc7318568905b5a99f817a058de683995"
+    },
+    {
+      "rva": 51913760,
+      "purpose": "saved fixture original reader/factory",
+      "size": 2387,
+      "sha256": "df2c1e2a15d383532204b3280bd15db0aad45dae344a5f0b1980b1325b912505"
     }
   ],
   "data_addresses": [

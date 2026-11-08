@@ -19,7 +19,8 @@ ASSETS = (
 RELEASE_SHA256 = 'b18594de3fcfecbb520e73c86555e122eb899dbadc2ff3402dd0f839329f1614'
 PAYLOAD_SHA256 = '8ec66ee7528d0ad60161207b93fedee2ec5cf97dc73af9314d719c289070fc6d'
 TRUSTED_RELEASES = {RELEASE_SHA256: PAYLOAD_SHA256,
-                    'e05f81c8100e626bbff838e04e4c8cb9b962e5158a7c6c3c918cde06f95cec22': 'd184d2a0d0b5866ad35e473996536a88cec86c1355754687d1f394165ecec26d'}
+                    'e05f81c8100e626bbff838e04e4c8cb9b962e5158a7c6c3c918cde06f95cec22': 'd184d2a0d0b5866ad35e473996536a88cec86c1355754687d1f394165ecec26d',
+                    '95dda08390893f13b24d974c6743db05270171a636b9b28ed1e1204757c0ee18': '8ce1c96371d1ab23d7552ae5418a8cdd5ddb4996e7672503dba1f5c5cc4541cf'}
 
 
 def prepare_release(executable):
@@ -27,7 +28,7 @@ def prepare_release(executable):
     raw = Path(executable).read_bytes()
     expected_payload = TRUSTED_RELEASES.get(hashlib.sha256(raw).hexdigest())
     if expected_payload is None:
-        raise ValueError('Expected an official v1103.2 or v1106 release EXE; SHA256 mismatch')
+        raise ValueError('Expected a verified v1103.2, v1106 or v1108.5 release EXE; SHA256 mismatch')
     start, end = raw.find(b'PK\x03\x04'), raw.rfind(b'PK\x05\x06')
     if start < 0 or end < start or end + 22 > len(raw):
         raise ValueError('Embedded payload not found')
@@ -64,7 +65,7 @@ def prepare(source, catalog):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--release-exe', type=Path, help='v1103.2 or v1106 EXE downloaded from Releases')
+    parser.add_argument('--release-exe', type=Path, help='Official EXE downloaded from Releases (use v1108.5 for matching inputs)')
     parser.add_argument('--assets-root', type=Path,
                         help='Existing engine workspace, not the game installation')
     parser.add_argument('--catalog', type=Path,

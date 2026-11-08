@@ -1,6 +1,11 @@
 """Attribute original goal/card events and reconcile goals with score reversals."""
 from collections import Counter
 
+
+def _people(scenario):
+    generated='native_generation'in scenario
+    return [{p.get('source_uid',p['native_id'])if generated else p['native_id']:p for p in t['players']}for t in scenario['teams']]
+
 def _merge_cards(cards):
     """A sending-off notification and a second booking can arrive either way."""
     result=[];seen=set();dismissals={}
@@ -23,7 +28,7 @@ def _merge_cards(cards):
 def _collect_queue(rows,scenario,position_names):
     marker=next((r for r in rows if r.get('event')=='native_player_match_totals'),None)
     if marker is None or not(marker.get('observer_installed')or marker.get('queue_observations')):return {'collected':False,'goals':[],'cancelled_goals':[],'cards':[]}
-    people=[{p['native_id']:p for p in team['players']}for team in scenario['teams']]
+    people=_people(scenario)
     def person(raw):
         if not raw:return None
         value=dict(raw);value['name']=people[raw['side']].get(raw['native_id'],{}).get('name','球员 #'+str(raw['native_id']))
@@ -96,7 +101,7 @@ def collect(rows,scenario,position_names):
         try:
             if registry.get('valid')is False:raise ValueError(registry.get('error','registry_read_failed'))
             people={(p['side'],p['roster_index']):p for p in marker['players']}
-            names=[{p['native_id']:p.get('name',str(p['native_id']))for p in t['players']}for t in scenario['teams']]
+            names=[{uid:p.get('name',str(uid))for uid,p in people.items()}for people in _people(scenario)]
             def person(side,index,raw=None):
                 p=people.get((side,index))
                 if p is None:return None

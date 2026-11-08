@@ -13,7 +13,7 @@
       "full_masked_function_identity": true
     }
   ],
-  "compatibility_ranges": 77,
-  "compatibility_bytes": 69675,
+  "compatibility_ranges": 95,
+  "compatibility_bytes": 86704,
   "whole_DLL_SHA_is_admission_gate": false
 }

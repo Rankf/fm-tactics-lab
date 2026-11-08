@@ -13,6 +13,7 @@ import uuid
 from fm27_batch import BatchRunner, MatchCancellation, own_child_processes
 from fm27_simulator import inspect_log
 import fm27_match_events
+from desktop_storage import require_space
 
 
 def sha(path):
@@ -60,8 +61,34 @@ class DesktopWarmRunner(BatchRunner):
         checked=inspect_log(path,rows=merged_rows(receipt,rows))
         for event in ['native_scenario_readback_verified','native_player_tactic_bindings_verified','native_opposition_effective_verified','native_event_observer_stopped','original_match_release_completed']:
             if not any(r['event']==event for r in rows):raise ValueError('缺少原生校验：'+event)
+        if 'native_generation'in task['scenario']:
+            generated=[r for r in rows if r.get('event')=='source_generation_readback']
+            if len(generated)!=2 or not all(r.get('staff_player_identity_and_attributes_verified')and r.get('native_adaptation_verified')for r in generated):raise ValueError('电脑生成战术或源身份未通过回读')
+            if not any(r.get('event')=='native_fresh_duel_competition_context'and r.get('carrier_competition_discarded')for r in rows):raise ValueError('新对战赛事上下文未通过核实')
+            if task.get('event_details',True)and not any(r.get('event')=='native_player_statistics_identity_verified'and r.get('verified')for r in rows):raise ValueError('球员统计未通过原生身份核对')
         released=next(r for r in rows if r['event']=='original_match_release_completed')
         if not released['tls_context_cleared']:raise ValueError('上一场原生线程上下文未清除')
+        execution = None
+        if 'experimental_execution' in task['scenario']:
+            expected = task['scenario']['experimental_execution']
+            versions = [r for r in rows if r.get('event') == 'experimental_engine_version']
+            execution = sorted((r for r in rows if r.get('event') == 'native_execution_probe'
+                                and r.get('stage') == 'finished'), key=lambda r:r['side'])
+            if len(versions) != 1 or versions[0]['after'] != 0x1b000000 or len(execution) != 2:
+                raise ValueError('缺少原生实验执行力回执')
+            for side, row in enumerate(execution):
+                value = expected[side]
+                if (row['side'] != side or row['policy'] != value or row['build_calls'] <= 0
+                        or row['sample_calls'] <= 0 or not row['players']
+                        or any(bytes.fromhex(p['record_hex'])[:33] != bytes([value])*33 for p in row['players'])):
+                    raise ValueError('实验执行力未通过原生采样或回读核对')
+                players = task['scenario']['teams'][side]['players']
+                for player in row['players']:
+                    if 'input_roster_slot' not in player:
+                        continue
+                    source = players[player['input_roster_slot']].get('native_profile', {})
+                    if 'current_ability' in source and source['current_ability'] != player['input_ca']:
+                        raise ValueError('战术执行力计算收到的球员能力与输入不符')
         statistics=next((r for r in rows if r['event']=='native_match_statistics'),None)
         if not statistics or len(statistics['teams'])!=2:raise ValueError('缺少原生球队统计')
         for team in statistics['teams']:
@@ -86,6 +113,8 @@ class DesktopWarmRunner(BatchRunner):
                 raise ValueError('进球事件与原生比分不一致')
         timings=next(r for r in rows if r['event']=='native_timings')
         return {'variant':task['variant'],'seed':task['seed'],'result':checked['result'],'episode':None,
+                **({'experimental_execution':execution} if execution is not None else {}),
+                'generated_plans':[r for r in rows if r.get('event')=='source_generation_readback'],
                 'statistics':statistics,'events':events,'score_changes':checked['score_changes'],'log':path.name,
                 'verified':True,'attempts':1,'retry_errors':[],'timings':timings,
                 'elapsed_seconds':round(time.perf_counter()-submitted,3),
@@ -118,6 +147,7 @@ class DesktopWarmRunner(BatchRunner):
         def session(chunk):
             if self.stop.is_set():return
             root=Path(chunk[0]['path']).parent
+            require_space(root,additional_bytes=len(chunk)*3*1024**2)
             folder=root/'worker_sessions'/uuid.uuid4().hex;folder.mkdir(parents=True)
             startup=folder/'session.jsonl';manifest=folder/'manifest.txt';fields=['FM27DW1']
             for task in chunk:
@@ -145,7 +175,7 @@ class DesktopWarmRunner(BatchRunner):
                     env['FM27_SKIP_EVENT_DETAILS']='1'
                     env.pop('FM27_DESKTOP_EVENTS_AUDIT',None)
                 for name in list(env):
-                    if name.startswith(('FM27_IMPORT_','FM27_EXPORT_','FM27_EPISODE_'))or name=='FM27_DESKTOP_STATS_AUDIT':env.pop(name)
+                    if name.startswith(('FM27_IMPORT_','FM27_EXPORT_','FM27_EPISODE_','FM27_SAVE_SECTION_','FM27_SAVED_CORE_','FM27_AI_'))or name=='FM27_DESKTOP_STATS_AUDIT':env.pop(name)
                 command=[str(self.root/'fm27_native/FM27Simulator.exe'),'--worker-manifest',str(manifest),
                          '--output',str(startup),'--tick-step','1','--cancel-event',cancellation.name]
                 with self.lock:

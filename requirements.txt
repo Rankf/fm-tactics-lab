@@ -1,1 +1,2 @@
-# This release uses the Python 3.12 standard library only.
+fmsave==0.9.0
+backports-zstd==1.8.0

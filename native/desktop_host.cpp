@@ -28,6 +28,7 @@ static fs::path desktop_game_root;
 static fs::path dump_input;
 static fs::path scenario_file;
 static bool seed_override=false;
+static bool inspect_fixture_only=false;
 static uint32_t requested_seed=0;
 static int tick_step=1;
 static bool policy_audit=false;
@@ -59,6 +60,7 @@ static int audit_policies(){
 }
 struct ScenarioEdit {uint32_t kind,side,a,b,value;};
 static std::vector<ScenarioEdit> scenario_edits;
+static std::vector<unsigned char> source_generation_config;
 static ScenarioEdit current_scenario_edit={};
 static const char* scenario_stage="initial";
 static bool game_constraints[2]={false,false};
@@ -123,13 +125,19 @@ static void log_phase_players(unsigned char* team,unsigned phase){
     fputs("]",log_file);
 }
 static bool apply_scenario(unsigned char* match,bool tactics_only=false){
-    if(scenario_file.empty())return true;
+    if(scenario_file.empty()){source_generation_config.clear();return true;}
     uint32_t count=(uint32_t)scenario_edits.size();
     if(!tactics_only){
         std::ifstream file(scenario_file,std::ios::binary);char magic[8]={};
         file.read(magic,8);file.read((char*)&count,4);
-        if(!file||memcmp(magic,"FM27CFG1",8)||count>20000)return false;
+        bool source_config=!memcmp(magic,"FM27CFG2",8);
+        if(!file||(!source_config&&memcmp(magic,"FM27CFG1",8))||count>20000)return false;
         scenario_edits.resize(count);file.read((char*)scenario_edits.data(),count*sizeof(ScenarioEdit));
+        source_generation_config.clear();
+        if(source_config){
+            source_generation_config.resize(584);file.read((char*)source_generation_config.data(),584);
+            if(memcmp(source_generation_config.data(),"FM27DUL1",8))return false;
+        }
         if(!file||file.peek()!=EOF)return false;
         for(auto e:scenario_edits)if(e.kind==13){if(e.side>1||e.value>1)return false;game_constraints[e.side]=e.value!=0;}
     }
@@ -144,9 +152,11 @@ static bool apply_scenario(unsigned char* match,bool tactics_only=false){
         current_scenario_edit=edit;scenario_stage="records";
         if(edit.side>1)return false;
         auto team=*(unsigned char**)(match+0x15380+8*edit.side);
-        if(edit.kind==17){
+        if(edit.kind==61){
+            if(edit.a||edit.b||edit.value>100)return false;
+        }else if(edit.kind==17){
             if(edit.value<11||edit.value>team[0x72d])return false;
-            team[0x72d]=(unsigned char)edit.value;
+            // Apply eligibility after original preparation initializes all carrier slots.
         }else if(edit.kind==1){
             if(edit.a>=team[0x72d]||edit.b>=69||edit.value>(edit.b<15?20u:100u))return false;
             if(edit.b>=15&&!edit.value)return false;
@@ -254,7 +264,8 @@ static bool apply_scenario(unsigned char* match,bool tactics_only=false){
                 if(edit.b==0){if(edit.value>2)return false;obj[0x14]=(unsigned char)edit.value;}
                 else if(edit.b==1||edit.b==2){
                     auto current=((unsigned char(*)(void*))vt[18+edit.b-1])(obj);
-                    if(current==255||edit.value>(edit.b==2?1u:2u))return false;
+                    bool recorded_strategy=edit.b==1&&((edit.a/16==5&&edit.value==3)||(edit.a/16==7&&edit.value==6)||(edit.a/16==8&&edit.value==3));
+                    if(current==255||(edit.value>(edit.b==2?1u:2u)&&!recorded_strategy))return false;
                     ((void(*)(void*,unsigned char))vt[20+edit.b-1])(obj,(unsigned char)edit.value);
                 }else return false;
             }else if(edit.kind==42){
@@ -522,7 +533,7 @@ static void dump_match_input(unsigned char* match){
         for(unsigned i=0;i<manager[0x1748];i++){auto e=manager+0x174c+i*8;fprintf(f,"%s{\"position\":%u,\"packed\":%u}",i?",":"",*(uint32_t*)e,e[4]|(e[5]<<8)|(e[6]<<16));}
         fputs("],\"taker_lists\":[",f);
         unsigned list_index=0;
-        for(unsigned off:{0u,0x18u,0x30u,0x48u,0x60u,0x78u,0x90u,0xa8u,0xf0u,0x108u,0x120u,0x138u,0x150u,0x168u,0x180u,0x198u,0x1c8u,0x1e0u}){
+        for(unsigned off:{0u,0x18u,0x30u,0x48u,0x60u,0x78u,0x90u,0xa8u,0xc0u,0xd8u,0xf0u,0x108u,0x120u,0x138u,0x150u,0x168u,0x180u,0x198u,0x1c8u,0x1e0u}){
             auto v=manager+0x6f0+off;auto begin=*(uint32_t**)v,end=*(uint32_t**)(v+8);
             if(end-begin>10000)ExitProcess(106);
             fprintf(f,"%s{\"offset\":%u,\"players\":[",list_index++?",":"",off);
@@ -543,7 +554,7 @@ static void dump_match_input(unsigned char* match){
                     auto entry=obj+0x18+j*0x20;auto a=*(unsigned char**)(entry+8),b=*(unsigned char**)(entry+16);
                     fprintf(f,"%s{\"id\":%u,\"values\":[",j?",":"",*entry);for(auto p=a;p<b;p++)fprintf(f,"%s%u",p==a?"":",",*p);fputs("]}",f);
                 }
-                fputs("],\"priority\":[",f);auto a=*(unsigned char**)(obj+0x118),b=*(unsigned char**)(obj+0x120);for(auto p=a;p<b;p++)fprintf(f,"%s%u",p==a?"":",",*p);
+                fprintf(f,"],\"opaque_flags\":%u,\"priority\":[",obj[0x15]);auto a=*(unsigned char**)(obj+0x118),b=*(unsigned char**)(obj+0x120);for(auto p=a;p<b;p++)fprintf(f,"%s%u",p==a?"":",",*p);
                 fputs("],\"backups\":[",f);a=*(unsigned char**)(obj+0x130);b=*(unsigned char**)(obj+0x138);for(auto p=a;p<b;p+=3)fprintf(f,"%s[%u,%u,%u]",p==a?"":",",p[0],p[1],p[2]);fputs("]}",f);
             }fputc(']',f);
         }fputc(']',f);
@@ -561,7 +572,7 @@ static void dump_match_input(unsigned char* match){
         fputs("],\"players\":[",f);
         for(unsigned i=0;i<count;i++){
             auto player=*(unsigned char**)(team+0x138+i*8);
-            fprintf(f,"%s{\"index\":%u,\"id\":%u,\"prefix_hex\":",i?",":"",i,*(uint32_t*)(player+0x50));hex(player,0x80);
+            fprintf(f,"%s{\"index\":%u,\"id\":%u,\"person_key\":%u,\"prefix_hex\":",i?",":"",i,*(uint32_t*)(player+0x50),person_key(player));hex(player,0x80);
             fputs(",\"state_hex\":",f);hex(player+0x2e0,0x200);
             fputs(",\"identity_extra_hex\":",f);hex(player+0x80,0x200);
             fputs(",\"input_tail_hex\":",f);hex(player+0x4c5,0x81b);
@@ -573,6 +584,7 @@ static void dump_match_input(unsigned char* match){
     fputs("]}\n",f);fclose(f);
 }
 #include "fm27_engine_compat.h"
+static char native_image_sha256[65]={};
 static bool fingerprint_image(const fs::path& path){
     BCRYPT_ALG_HANDLE algorithm=nullptr;BCRYPT_HASH_HANDLE hash=nullptr;
     if(BCryptOpenAlgorithmProvider(&algorithm,BCRYPT_SHA256_ALGORITHM,nullptr,0)<0)return false;
@@ -583,7 +595,7 @@ static bool fingerprint_image(const fs::path& path){
     if(!file.eof())okay=false;
     unsigned char digest[32]={};if(BCryptFinishHash(hash,digest,32,0)<0)okay=false;
     BCryptDestroyHash(hash);BCryptCloseAlgorithmProvider(algorithm,0);
-    char hex[65]={};for(int i=0;i<32;i++)sprintf_s(hex+i*2,3,"%02x",digest[i]);
+    auto hex=native_image_sha256;for(int i=0;i<32;i++)sprintf_s(hex+i*2,3,"%02x",digest[i]);
     fprintf(log_file,"{\"event\":\"native_image_fingerprint\",\"sha256\":\"%s\"}\n",hex);fflush(log_file);
     wchar_t expected[128]={};if(GetEnvironmentVariableW(L"FM27_EXPECTED_DLL_SHA256",expected,128)){
         std::wstring actual(hex,hex+64);if(actual!=expected){fputs("{\"event\":\"engine_changed_within_session\"}\n",log_file);return false;}
@@ -598,6 +610,12 @@ static bool known_image(const fs::path& path){return compatible_image(path)&&fin
 #include "native_match_events.h"
 #include "native_setpiece_file.h"
 #include "native_setpiece_episode.h"
+#include "native_saved_fixture.h"
+#include "native_ai_tactics.h"
+#include "native_source_generation.h"
+#include "native_source_staff.h"
+#include "native_coach_presets.h"
+#include "native_execution_experiment.h"
 static int native_match(void* interface_object){
     fprintf(log_file,"{\"event\":\"native_match_pipeline_started\",\"runtime\":\"native_library_host\",\"full_match_completed\":false}\n");fflush(log_file);
     std::ifstream input(fixture,std::ios::binary);
@@ -646,6 +664,7 @@ static int native_match(void* interface_object){
     // Canonical JSON resource type; its native initializer handles the binary
     // and text resource readers used by the original match data.
     ((void(*)(void*,void*))at(0xc53910))(resources,at(0x5716528));
+    desktop_coach_preset_resource_types(resources);
     ((void(*)(void*))at(0xc539b0))(resources);
     auto type_begin=((uintptr_t*)resources)[0x60/8],type_end=((uintptr_t*)resources)[0x68/8];
     fprintf(log_file,"{\"event\":\"native_resource_type_count\",\"count\":%llu}\n",(unsigned long long)((type_end-type_begin)/8));fflush(log_file);
@@ -714,6 +733,7 @@ static int native_match(void* interface_object){
     reference=native_stream;
     auto match=(unsigned char*)((void*(*)(size_t))at(0xa85270))(0x155b0);
     ((void*(*)(void*))at(0x184400))(match);
+    memcpy(duel_competition_defaults,match+0x678,0x30);
     fprintf(log_file,"{\"event\":\"native_match_constructed\"}\n");fflush(log_file);
     // Same derived benchmark class and thread context as original a84f12/a84f89.
     *(void**)match=at(0x4c8c878);match[0x155a0]=0;
@@ -731,6 +751,10 @@ static int native_match(void* interface_object){
     if(!accepted)desktop_finish_and_exit(88);
     auto release_ref=[](void*& value){if(value){auto p=value;value=nullptr;if(InterlockedDecrement((volatile LONG*)((unsigned char*)p+8))==0)((void(*)(void*,unsigned))(*(void***)p)[0])(p,1);}};
     release_ref(reference);release_ref(native_stream);
+    desktop_read_ai_tactics(match);
+    desktop_export_coach_presets();
+    staff_body_diagnostic();
+    saved_section_probe(interface_object);
     desktop_import_tac(match);
     desktop_import_setpiece(match);
     if(!apply_scenario(match)){fprintf(log_file,"{\"event\":\"scenario_rejected\",\"stage\":\"%s\",\"kind\":%u,\"side\":%u,\"a\":%u,\"b\":%u,\"value\":%u}\n",scenario_stage,current_scenario_edit.kind,current_scenario_edit.side,current_scenario_edit.a,current_scenario_edit.b,current_scenario_edit.value);fflush(log_file);desktop_finish_and_exit(108);}
@@ -738,11 +762,24 @@ static int native_match(void* interface_object){
     auto fixture_seed=*(uint32_t*)(match+0x20);
     if(seed_override)*(uint32_t*)(match+0x20)=requested_seed;
     fprintf(log_file,"{\"event\":\"native_input_seed\",\"fixture_seed\":%u,\"effective_seed\":%u,\"override\":%s}\n",fixture_seed,*(uint32_t*)(match+0x20),seed_override?"true":"false");fflush(log_file);
+    source_generation_install(match);
+    execution_install(match);
     timing_prepare=GetTickCount64();
     ((void(*)(void*))at(0x4962660))(match);
     timing_ready=GetTickCount64();
+    for(const auto& edit:scenario_edits)if(edit.kind==17){
+        auto team=*(unsigned char**)(match+0x15380+8*edit.side);
+        if(edit.value<11||edit.value>team[0x72d])desktop_finish_and_exit(108);
+        auto original_count=team[0x72d];team[0x72d]=(unsigned char)edit.value;
+        fprintf(log_file,"{\"event\":\"native_match_roster_committed\",\"side\":%u,\"carrier_count\":%u,\"participants\":%u,\"after_original_preparation\":true}\n",edit.side,original_count,edit.value);fflush(log_file);
+    }
     if(!verify_scenario(match)){fprintf(log_file,"{\"event\":\"scenario_readback_mismatch\"}\n");fflush(log_file);desktop_finish_and_exit(109);}
+    source_generation_verified(match);
     dump_match_input(match);
+    if(inspect_fixture_only){
+        fputs("{\"event\":\"native_fixture_inspected\",\"simulation_ticks_executed\":0}\n",log_file);fflush(log_file);
+        desktop_finish_and_exit(0);return 0;
+    }
     desktop_initial_state_snapshot(match);
     fprintf(log_file,"{\"event\":\"native_preparation_returned\",\"gates\":[%u,%u,%u]}\n",match[0x15570],match[0x1556e],match[0x15575]);fflush(log_file);
     if(match[0x15570]!=1||match[0x1556e]!=1||match[0x15575]==0)desktop_finish_and_exit(89);
@@ -794,6 +831,7 @@ static int native_match(void* interface_object){
         if(flags&4){
             for(unsigned side=0;side<2;side++)fprintf(log_file,"{\"event\":\"native_phase_coverage\",\"side\":%u,\"in_possession_samples\":%llu,\"out_of_possession_samples\":%llu,\"phase_changes\":%u}\n",side,(unsigned long long)phase_samples[side][0],(unsigned long long)phase_samples[side][1],phase_changes[side]);
             desktop_stats_snapshot(match,"finished");
+            execution_snapshot(match,"finished");
             desktop_match_statistics(match);
             desktop_player_totals(match);
             auto now=GetTickCount64();
@@ -961,6 +999,7 @@ int wmain(int argc,wchar_t** argv){
     for(int i=1;i<argc;i++){
         std::wstring arg=argv[i];
         if(arg==L"--check-image"&&i+1<argc)check_image=fs::absolute(argv[++i]);
+        else if(arg==L"--inspect-fixture")inspect_fixture_only=true;
         else if(arg==L"--worker-manifest"&&i+1<argc)worker_manifest=fs::absolute(argv[++i]);
         else if(arg==L"--cancel-event"&&i+1<argc)desktop_cancel_name=argv[++i];
         else if(arg==L"--child")is_child=true;
@@ -995,6 +1034,7 @@ int wmain(int argc,wchar_t** argv){
     if(policy_audit)command+=L" --policy-audit";
     if(!desktop_cancel_name.empty())command+=L" --cancel-event "+quote(desktop_cancel_name);
     if(!dump_input.empty())command+=L" --dump-input "+quote(dump_input.wstring());
+    if(inspect_fixture_only)command+=L" --inspect-fixture";
     if(!scenario_file.empty())command+=L" --scenario-file "+quote(scenario_file.wstring());
     STARTUPINFOW start={};start.cb=sizeof(start);start.lpDesktop=desktop_name;
     PROCESS_INFORMATION process={};

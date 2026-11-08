@@ -4,7 +4,7 @@
 
 **Test your tactics locally with the original FM27 match engine.**
 
-Import a tactic, configure both squads, run complete matches in batches, and compare scores, xG, shots, possession and passing statistics.
+Configure both squads in Free Simulation or import an FM27 career save to play opponents from the same league. Compare scores, xG, shots, possession and passing statistics across complete matches.
 
 Use it to explore which formation suits your players, how pressing or role changes affect performance, and whether an advantage holds across repeated matches.
 
@@ -14,7 +14,7 @@ Edit possession and out-of-possession formations, team instructions and player r
 
 ![Dual-phase tactical boards and team instructions](docs/screenshots/tactics.png)
 
-Screenshots show the current open-source edition with the included example players. The interface is in Chinese.
+The screenshots show Free Simulation with the included example players. The interface is in Chinese.
 
 ## How it works
 
@@ -40,13 +40,21 @@ Each batch uses a sequence of random seeds. When comparing a saved reference wit
 
 ## Download and launch
 
-Download **`FM27-Tactics-Lab-v1106.exe`** from [Releases](https://github.com/lqf0624/fm-tactics-lab/releases/latest). This update fixes engine status initialization and manual game-path selection. The previous v1103.2 binary remains available in release history. Career-save versus mode remains in later development versions.
+Download **FM27-Tactics-Lab-v1108.5.exe** and exit the previous app from its tray menu before launching the update. [v1108.5 release](https://github.com/lqf0624/fm-tactics-lab/releases/tag/v1108.5)
 
 Install FM27, open Steam and sign in to the account that owns the game, then launch the EXE. The tool looks for your installation automatically. You can also select the game root containing `fm_Data` and `shared` in the engine settings at the top.
 
 The EXE includes its Python runtime. Players do not need Python or a compiler. The desktop interface in this release is in Chinese; the English documentation below explains the controls. Source setup is described in the [developer guide](docs/DEVELOPMENT.md).
 
-## Your first experiment
+## Career-save matches
+
+1. Switch to **存档对战** (Career-save Matches), import an FM27 .fm save, and select the club you manage.
+2. Load its tactic, review first-team attributes, and adjust your starting lineup and bench.
+3. Select opponents from the same league. Preview their in-possession and out-of-possession boards, then run home and away matches.
+
+Opponent tactics use a built-in preset selected from the head coach's saved style and formation preferences. A team is selectable when both the coach and preferences can be verified. Opponent squads load in batches as needed. You can track or cancel match preparation.
+
+## Free Simulation
 
 ### 1. Configure both squads
 
@@ -60,7 +68,7 @@ Open **战术板** (Tactics Board):
 
 - Use **导入主队／客队比赛战术 FMF** to import a home or away tactic.
 - Edit **有球阶段** (In Possession) and **无球阶段** (Out of Possession) separately; both phases share the starting lineup.
-- Drag shirts to change positions, then select roles and individual instructions.
+- Drag shirts to swap players while keeping roles, duties and instructions attached to their positions. Moving to an empty position prompts for confirmation if any settings need to change.
 - Adjust mentality, passing, pressing and other team instructions.
 - Configure or import set-piece routines separately in **定位球与职责** (Set Pieces and Responsibilities).
 
@@ -115,16 +123,21 @@ For example, after increasing possession, check whether the side also creates mo
 
 Both full squads start with condition and match sharpness at 100%, accumulated fatigue at 0, morale at 20/20, team cohesion at 80 and club cohesion at 100. States evolve normally after kickoff. This makes repeated tactical comparisons easier; consider actual fatigue, morale, cohesion and injuries when applying findings in your season.
 
+### Tactical effectiveness experiment
+
+You can set tactical effectiveness for both teams on a 0–100 scale. The native match simulation uses the supplied values. The option is off by default. Career-save effectiveness values are not yet available.
+
 ## Save and export
 
 - **Full setup JSON:** save both sides and reopen the setup for later experiments.
 - **Tactic FMF:** export the selected side's tactic; set pieces have separate export controls.
 - **Match CSV:** save individual results for analysis.
+- **Experiment history:** name, find, rename or delete experiments. Confirming deletion removes their local results and logs.
 - **Tray menu:** open the local results directory or exit the desktop tool.
 
 ## Version and project information
 
-This release is **v1106**, for Windows x64. The adapter reference build is `27.0.0+2493426`. Tool code is licensed under MIT; the engine and game resources come from your local installation.
+This release is **v1108.5**, for Windows x64. The adapter reference build is `27.0.0+2493426`. Tool code is licensed under MIT; the engine and game resources come from your local installation.
 
 Original engine code and a career match's complete conditions are separate considerations. This tool standardizes starting states; inputs, random states and in-match interventions affect results. Evidence and validation scope are described in [Simulation Fidelity](docs/SIMULATION_FIDELITY.md).
 

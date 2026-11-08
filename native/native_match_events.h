@@ -58,8 +58,28 @@ static void desktop_player_totals(unsigned char* match){
     if(desktop_event_details_disabled)return;
     desktop_final_incidents(match);
     fputs("{\"event\":\"native_player_match_totals\",\"players\":[",log_file);bool comma=false;
-    for(unsigned side=0;side<2;side++){auto team=*(unsigned char**)(match+0x15380+8*side);for(unsigned i=0;i<team[0x72d];i++){auto actor=*(unsigned char**)(team+0x138+8*i);auto stats=*(unsigned char**)(actor+0x1880);if(!stats)continue;fprintf(log_file,"%s{\"side\":%u,\"roster_index\":%u,\"native_id\":%u,\"goals\":%u,\"yellow_cards\":%u,\"red_cards\":%u,\"ip_position\":%u,\"oop_position\":%u}",comma?",":"",side,i,*(unsigned*)(actor+0x50),stats[0x8b],stats[0xa6],stats[0xa7],*(unsigned*)(actor+0xce0),*(unsigned*)(actor+0xdb8));comma=true;}}
+    // 72d is the actor pool; 72e is the registered match roster.
+    // 127990/127b70 own the canonical statistics vector. Unused bench actors
+    // may retain an incidental runtime pointer after fc330 rearranges players;
+    // that pointer is not an additional player's statistics record.
+    unsigned checked_records=0;bool identity_ok=true;
+    for(unsigned side=0;side<2;side++){
+        auto team=*(unsigned char**)(match+0x15380+8*side);
+        auto context=*(unsigned char**)(match+0x14ea0),totals=*(unsigned char**)(context+0x70+8*side);
+        auto begin=*(unsigned char***)(totals+0x250),end=*(unsigned char***)(totals+0x258);
+        if(end<begin||end-begin<11||end-begin>26||end-begin!=team[0x72e]){identity_ok=false;continue;}
+        for(auto item=begin;item!=end;item++){
+            auto stats=*item;unsigned char* actor=nullptr;unsigned index=0,matches=0;
+            for(unsigned i=0;i<team[0x72d];i++){
+                auto candidate=*(unsigned char**)(team+0x138+8*i);
+                if(person_key(candidate)==*(uint32_t*)(stats+0x18)){actor=candidate;index=i;matches++;}
+            }
+            if(matches!=1){identity_ok=false;continue;}checked_records++;
+            fprintf(log_file,"%s{\"side\":%u,\"roster_index\":%u,\"native_id\":%u,\"goals\":%u,\"yellow_cards\":%u,\"red_cards\":%u,\"ip_position\":%u,\"oop_position\":%u}",comma?",":"",side,index,*(unsigned*)(actor+0x50),stats[0x8b],stats[0xa6],stats[0xa7],*(unsigned*)(actor+0xce0),*(unsigned*)(actor+0xdb8));comma=true;
+        }
+    }
     fprintf(log_file,"],\"queue_observations\":%u,\"observer_installed\":%s,\"nonzero_packet_padding_observations\":%u}\n",desktop_event_breaks,desktop_event_installed?"true":"false",desktop_event_nonzero_padding);fflush(log_file);
+    fprintf(log_file,"{\"event\":\"native_player_statistics_identity_verified\",\"verified\":%s,\"canonical_records\":%u}\n",identity_ok?"true":"false",checked_records);fflush(log_file);
 }
 static LONG CALLBACK desktop_event_exception(EXCEPTION_POINTERS* e){
     if(e->ExceptionRecord->ExceptionCode!=EXCEPTION_SINGLE_STEP)return EXCEPTION_CONTINUE_SEARCH;
