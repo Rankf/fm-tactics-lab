@@ -13,10 +13,13 @@ def cell(position='GK',role='Goalkeeper',duty='0'):
     return {'position':position,'role':role,'duty':duty,'instructions':{'1':0},'target_player':255,'target_position':0}
 
 
+TACTIC_POSITIONS=['GK','DR','DCR','DCL','DL','DMC','MCR','MCL','AMR','AML','ST']
+
+
 def tactic(name='测试战术',mentality=3,extra='0',plan=True):
     value={'tactic_name':name,'mentality':mentality,'instructions':{'1':2,'2':1},
         'native_extra_team_bits':extra,
-        'phases':[[cell()for _ in range(11)],[cell('ST','CentreForward')for _ in range(11)]]}
+        'phases':[[cell(position)for position in TACTIC_POSITIONS]for _ in range(2)]}
     if plan:value['native_source_plan']={'value':{'phases':[],'instructions':{}},'signature':'a'*64}
     return value
 
@@ -24,9 +27,16 @@ def tactic(name='测试战术',mentality=3,extra='0',plan=True):
 def team(name='球队'):
     return {'name':name,'tactic_name':'原战术','mentality':5,'instructions':{'1':1},
         'native_extra_team_bits':'4','phases':[[cell()for _ in range(11)],[cell()for _ in range(11)]],
+        'lineup':list(range(11)),
         'players':[{'name':f'球员{index}','native_id':index,'attributes':[10]*69}for index in range(16)],
         'squad':[{'source_uid':index,'attributes':[7]*69}for index in range(2)],
         'native_source_plan':{'value':{'phases':[],'instructions':{}},'signature':'b'*64}}
+
+
+def expected_positions(positions,slot):
+    attrs=[10]*15;attrs[pools.POSITION_ATTRIBUTE_INDEX['GK']]=1
+    attrs[pools.POSITION_ATTRIBUTE_INDEX[positions[slot]]]=pools.POSITION_FAMILIARITY
+    return attrs
 
 
 def entry(name='战术一',weight=1,plan=True):
@@ -232,8 +242,11 @@ class ApplyTests(unittest.TestCase):
         self.assertEqual(target['native_extra_team_bits'],'0')
         self.assertEqual(target['phases'],source['tactic']['phases'])
         self.assertEqual(target['native_source_plan'],source['tactic']['native_source_plan'])
-        for player in target['players']:
-            self.assertEqual(player['attributes'][:15],[15]*15)
+        for slot,player in enumerate(target['players'][:11]):
+            self.assertEqual(player['attributes'][:15],expected_positions(TACTIC_POSITIONS,slot))
+            self.assertEqual(player['attributes'][15:],[75]*54)
+        for player in target['players'][11:]:
+            self.assertEqual(player['attributes'][:15],[1]+[10]*14)
             self.assertEqual(player['attributes'][15:],[75]*54)
         self.assertEqual(target['squad'],before['squad'])
 
@@ -248,11 +261,27 @@ class ApplyTests(unittest.TestCase):
         pools.apply(target,entry('保留'),{'enabled':False,'attribute_value':20})
         self.assertEqual(target['players'],original)
         pools.apply(target,entry('统一'),{'enabled':True,'attribute_value':1})
-        self.assertEqual(target['players'][0]['attributes'][:15],[1]*15)
+        self.assertEqual(target['players'][0]['attributes'][:15],expected_positions(TACTIC_POSITIONS,0))
         self.assertEqual(target['players'][0]['attributes'][15:],[5]*54)
         pools.apply(target,entry('统一'),{'enabled':True,'attribute_value':20})
-        self.assertEqual(target['players'][0]['attributes'][:15],[20]*15)
+        self.assertEqual(target['players'][0]['attributes'][:15],expected_positions(TACTIC_POSITIONS,0))
         self.assertEqual(target['players'][0]['attributes'][15:],[100]*54)
+
+    def test_apply_sets_natural_familiarity_for_assigned_positions(self):
+        target=team('客队')
+        positions=[['GK','DR','DCR','DCL','DL','DMC','MCR','MCL','AMR','AML','ST'],
+                   ['GK','WBR','DC','DC','WBL','DMC','MC','MC','AMC','AMC','ST']]
+        source=entry('位置')
+        source['tactic']['phases']=[[cell(position)for position in positions[0]],[cell(position)for position in positions[1]]]
+        pools.apply(target,source,{'enabled':True,'attribute_value':15})
+        for slot in range(11):
+            player=target['players'][target['lineup'][slot]]
+            attributes=player['attributes']
+            expected=[10]*15;expected[pools.POSITION_ATTRIBUTE_INDEX['GK']]=1
+            for phase in range(2):
+                expected[pools.POSITION_ATTRIBUTE_INDEX[positions[phase][slot]]]=pools.POSITION_FAMILIARITY
+            self.assertEqual(attributes[:15],expected)
+            self.assertEqual(attributes[15:],[75]*54)
 
     def test_apply_rejects_incomplete_player_attributes(self):
         target=team('客队');target['players'][0]['attributes']=[10]*68
@@ -269,8 +298,11 @@ class ExpandTests(unittest.TestCase):
         self.assertEqual(expanded['teams'][1]['tactic_name'],'乙')
         self.assertEqual(expanded['teams'][1]['mentality'],3)
         self.assertEqual(expanded['teams'][0]['tactic_name'],'原战术')
-        for player in expanded['teams'][1]['players']:
-            self.assertEqual(player['attributes'][:15],[15]*15)
+        for slot,player in enumerate(expanded['teams'][1]['players'][:11]):
+            self.assertEqual(player['attributes'][:15],expected_positions(TACTIC_POSITIONS,slot))
+            self.assertEqual(player['attributes'][15:],[75]*54)
+        for player in expanded['teams'][1]['players'][11:]:
+            self.assertEqual(player['attributes'][:15],[1]+[10]*14)
             self.assertEqual(player['attributes'][15:],[75]*54)
         expanded['teams'][1]['phases'][0][0]['position']='XX'
         self.assertEqual(source['teams'][1]['phases'][0][0]['position'],'GK')

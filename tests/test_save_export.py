@@ -1,6 +1,8 @@
 import base64
+import copy
 import hashlib
 import json
+import os
 from pathlib import Path
 import struct
 import sys
@@ -11,9 +13,11 @@ from unittest import mock
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'src'))
 import desktop_coach_presets
+import desktop_save_compat
 import desktop_save_export
 import desktop_save_mode
 import fm27_fmf
+import fm27_tactic_pool
 
 SOURCE={'save_id':'0123456789abcdef','source':'C:/saves/career.fm','source_sha256':'a'*64,
         'date':'2027-01-15','build':'27.1.0'}
@@ -194,7 +198,28 @@ class _App:
         self.NATIVE=root/'native';self.NATIVE.mkdir()
         self.desktop_engine=_Engine();self.ENGINE_COMPATIBILITY={'resource_fingerprint':'test'}
 
-class SaveLibraryExportTests(unittest.TestCase):
+def tactic_cells():
+    return [{'position':'GK'if index==0 else'DC','role':'GK'if index==0 else'DC','duty':'0',
+             'instructions':{},'target_player':255,'target_position':0}for index in range(11)]
+
+def preset_team(tactic_name='教练偏好预设 · 高位逼抢',extra='0',mentality=4):
+    return {'name':'对手','tactic_name':tactic_name,'mentality':mentality,'instructions':{'1':0},
+            'native_extra_team_bits':extra,'phases':[tactic_cells(),tactic_cells()]}
+
+def pool_entry(name,extra='0'):
+    return {'name':name,'weight':1,'tactic':fm27_tactic_pool.entry_from_team(preset_team(extra=extra))['tactic']}
+
+def opponent(team_id,club_uid,name,preset_name,available=True,member=None):
+    return {'key':f'coach:{team_id}','club_uid':club_uid,'name':name,'available':available,
+            'member':member or f'original_installation_preset:{team_id}',
+            'source':'教练偏好预设 · 王教练 · 高位逼抢','coach':{'preset_name':preset_name,'team_id':team_id}}
+
+def league_report(opponents,failures=None,unrecovered=None,league=True,same_league_clubs=3):
+    return {'opponents':opponents,'failures':failures or [],'unrecovered_clubs':unrecovered or [],
+            'league':{'competition_id':17,'club_uids':[1,2,3,4]}if league else None,
+            'same_league_clubs':same_league_clubs}
+
+class SaveLibraryLeagueTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.temp_root=ROOT/'build/test-temp';cls.temp_root.mkdir(parents=True,exist_ok=True)
@@ -206,107 +231,181 @@ class SaveLibraryExportTests(unittest.TestCase):
     def tearDown(self):
         desktop_save_mode.dataset.cache_clear();self.holder.cleanup()
 
-    def save(self,tactics,clubs=({'uid':1,'name':'甲队','short_name':'甲'},{'uid':2,'name':'乙队','short_name':'乙'})):
+    def save(self):
         key='0123456789abcdef';folder=self.lib.root/key;folder.mkdir(parents=True)
-        data={'source':SOURCE['source'],'source_sha256':SOURCE['source_sha256'],'date':SOURCE['date'],
-              'build':SOURCE['build'],'clubs':list(clubs),'tactics':tactics,'fixtures':[],
-              'selections':[],'caches':[],'managed':[]}
+        data={'schema':3,'source':SOURCE['source'],'source_sha256':SOURCE['source_sha256'],'date':SOURCE['date'],
+              'build':SOURCE['build'],'tactics':[],'fixtures':[],'selections':[],'caches':[],'managed':[],
+              'clubs':[{'uid':1,'name':'甲队','short_name':'甲','nation_id':14},
+                       {'uid':2,'name':'乙队','short_name':'乙','nation_id':14},
+                       {'uid':3,'name':'丙队','short_name':'丙','nation_id':20},
+                       {'uid':4,'name':'丁队','short_name':'丁','nation_id':14}]}
         (folder/'dataset.json').write_text(json.dumps(data,ensure_ascii=False),encoding='utf8')
         desktop_save_mode.dataset.cache_clear()
         return key,folder
 
-    def test_stored_tactics_lists_only_parsed_first_team_plans(self):
-        key,folder=self.save([
-            {'name':'主战术','club_uid':1,'team_slot':0,'raw_plan':'tactic_0.bin'},
-            {'name':'未解析','club_uid':1,'team_slot':0},
-            {'name':'青年队','club_uid':1,'team_slot':1,'raw_plan':'tactic_1.bin'},
-            {'name':'对手战术','club_uid':2,'team_slot':0,'raw_plan':'tactic_2.bin'}])
-        self.assertEqual(self.lib.stored_tactics(key,1),
-            [{'key':'stored:0','index':0,'name':'主战术','available':True}])
-        self.assertEqual([t['key']for t in self.lib.stored_tactics(key,2)],['stored:3'])
-        self.assertFalse((folder/'rosters').exists())
-
-    def test_export_targets_reports_reading_and_composes_complete_result(self):
-        key,_=self.save([{'name':'主战术','club_uid':1,'team_slot':0,'raw_plan':'tactic_0.bin'}])
+    def test_league_library_composes_own_and_opponents(self):
+        key,_=self.save()
         with mock.patch.object(self.lib,'begin_opponents',return_value={'status':'reading','stage':'正在读取同联赛教练偏好'}):
-            self.assertEqual(self.lib.export_targets(key,1),{'status':'reading','stage':'正在读取同联赛教练偏好'})
-        with mock.patch.object(self.lib,'begin_opponents',return_value={'status':'error','stage':'教练偏好读取失败'}):
-            self.assertEqual(self.lib.export_targets(key,1),{'status':'error','stage':'教练偏好读取失败'})
-        report={'opponents':[{'key':'coach:77','club_uid':2,'name':'乙队','available':True,
-                    'source':'教练偏好预设 · 王教练 · 高位逼抢','coach':{'preset_name':'高位逼抢'}}],
-                'same_league_clubs':5,
-                'failures':[{'club_uid':3,'name':'丙队','error':'主教练缺失'}],
-                'unrecovered_clubs':[{'club_uid':3,'name':'丙队','reason':'教练偏好预设尚不可用'},
-                                     {'club_uid':4,'name':'丁队','reason':'教练偏好预设尚不可用'}]}
+            self.assertEqual(self.lib.league_library(key,1),{'status':'reading','stage':'正在读取同联赛教练偏好'})
+        with mock.patch.object(self.lib,'begin_opponents',return_value={'status':'error','stage':'读取失败'}):
+            self.assertEqual(self.lib.league_library(key,1),{'status':'error','stage':'读取失败'})
+        opponents=[opponent(77,2,'乙队','高位逼抢',member='original_installation_preset:3'),
+                   opponent(88,3,'丙队','低位防守')]
+        report=league_report(opponents,failures=[{'club_uid':4,'name':'丁队','error':'主教练缺失'}],
+            unrecovered=[{'club_uid':4,'name':'丁队','reason':'教练偏好预设尚不可用'},
+                         {'club_uid':5,'name':'戊队','reason':'教练偏好预设尚不可用'}])
         with mock.patch.object(self.lib,'begin_opponents',return_value={'status':'complete'}),\
              mock.patch.object(self.lib,'inspect_opponents',return_value=report):
-            value=self.lib.export_targets(key,1)
+            value=self.lib.league_library(key,1)
         self.assertEqual(value['status'],'complete')
-        self.assertEqual(value['own']['club_uid'],1)
-        self.assertEqual([t['key']for t in value['own']['tactics']],['stored:0'])
-        self.assertEqual(value['opponents'],[{'key':'coach:77','club_uid':2,'name':'乙队','tactic_name':'高位逼抢',
-            'source':'教练偏好预设 · 王教练 · 高位逼抢','available':True}])
-        self.assertEqual(value['same_league_clubs'],5)
-        self.assertEqual([f['club_uid']for f in value['failures']],[3,4])
+        self.assertEqual(value['save'],{'id':key,'source':SOURCE['source'],'source_sha256':SOURCE['source_sha256'],
+            'date':SOURCE['date'],'build':SOURCE['build']})
+        self.assertEqual(value['own'],{'club_uid':1,'name':'甲','nation_id':14,'league_id':17,'club_count':4})
+        self.assertEqual(value['teams'],[
+            {'club_uid':2,'name':'乙队','key':'coach:77','tactic_name':'高位逼抢',
+             'source':'教练偏好预设 · 王教练 · 高位逼抢','available':True,'member':'original_installation_preset:3'},
+            {'club_uid':3,'name':'丙队','key':'coach:88','tactic_name':'低位防守',
+             'source':'教练偏好预设 · 王教练 · 高位逼抢','available':True,'member':'original_installation_preset:88'}])
+        self.assertEqual([failure['club_uid']for failure in value['failures']],[4,5])
+        without_league={'opponents':opponents,'failures':[],'unrecovered_clubs':[],'league':None,'same_league_clubs':3}
+        with mock.patch.object(self.lib,'begin_opponents',return_value={'status':'complete'}),\
+             mock.patch.object(self.lib,'inspect_opponents',return_value=without_league):
+            value=self.lib.league_library(key,1)
+        self.assertEqual((value['own']['league_id'],value['own']['club_count']),(None,4))
+        without_league['same_league_clubs']=0
+        with mock.patch.object(self.lib,'begin_opponents',return_value={'status':'complete'}),\
+             mock.patch.object(self.lib,'inspect_opponents',return_value=without_league):
+            value=self.lib.league_library(key,1)
+        self.assertEqual(value['own']['club_count'],3)
 
-    def test_export_tactics_writes_payloads_and_keeps_failures(self):
-        key,_=self.save([
-            {'name':'主战术','club_uid':1,'team_slot':0,'raw_plan':'tactic_0.bin'},
-            {'name':'未解析','club_uid':1,'team_slot':0}])
-        self.app.DEFAULT={'schema':3,'fixture':'bundled_match_pkm','rules':'lab',
-            'teams':[{'name':'甲','tactic_name':''},{'name':'乙','tactic_name':''}]}
-        self.app.validate_scenario=lambda scenario:scenario
-        self.app.export_fmf=lambda data:{'file_base64':base64.b64encode(archive(10+data['side'])).decode(),
-            'report':{'native_roundtrip_verified':True,'notice':'已核验'}}
-        self.lib.parsed_plan=lambda key,index:{}
-        self.lib.apply_plan=lambda team,plan:None
-        directory=self.root/'out';directory.mkdir()
-        coach={'teams':[{'team_id':77,'club_uid':2,'name':'乙队'}]}
-        with mock.patch.object(desktop_coach_presets,'ensure',return_value=coach),\
-             mock.patch.object(desktop_coach_presets,'preset_tactic',
-                 return_value={'name':'乙队','tactic_name':'教练偏好预设 · 高位逼抢'}):
-            result=self.lib.export_tactics(key,1,['stored:0','stored:1','coach:77'],str(directory))
-        root=Path(result['directory'])
-        self.assertEqual(sorted(e['target']for e in result['files']),['coach:77','stored:0'])
-        self.assertEqual([f['target']for f in result['failures']],['stored:1'])
-        self.assertIn('不是已解析',result['failures'][0]['error'])
-        by_target={e['target']:e for e in result['files']}
-        self.assertEqual(fm27_fmf.tactics_plan((root/by_target['stored:0']['file']).read_bytes()),sample_plan(10))
-        self.assertEqual(fm27_fmf.tactics_plan((root/by_target['coach:77']['file']).read_bytes()),sample_plan(11))
-        self.assertTrue((root/'manifest.json').is_file())
-
-    def test_export_tactics_validation_and_all_failed_error(self):
-        key,_=self.save([{'name':'主战术','club_uid':1,'team_slot':0,'raw_plan':'tactic_0.bin'}])
-        directory=str(self.root/'out')
-        for targets in [[],['stored:0','stored:0'],['unknown:1'],[1]]:
-            with self.subTest(targets=targets),self.assertRaises(ValueError):
-                self.lib.export_tactics(key,1,targets,directory)
-        self.lib.parsed_plan=lambda key,index:(_ for _ in ()).throw(ValueError('原版引擎不可用'))
-        self.lib.apply_plan=lambda team,plan:None
-        with self.assertRaises(ValueError)as caught:
-            self.lib.export_tactics(key,1,['stored:0'],directory)
-        self.assertIn('全部导出失败',str(caught.exception))
-        self.assertFalse((self.root/'out').exists())
-
-    def test_export_tactics_keeps_coach_failure_metadata(self):
-        key,_=self.save([{'name':'主战术','club_uid':1,'team_slot':0,'raw_plan':'tactic_0.bin'},
-                         {'name':'次战术','club_uid':1,'team_slot':0,'raw_plan':'tactic_1.bin'}])
+    def test_export_league_tactics_writes_available_and_records_failures(self):
+        key,_=self.save()
         self.app.DEFAULT={'teams':[{'name':'甲','tactic_name':''},{'name':'乙','tactic_name':''}]}
-        self.app.validate_scenario=lambda scenario:scenario
-        self.app.export_fmf=lambda data:{'file_base64':base64.b64encode(archive(20+data['side'])).decode(),
-            'report':{'native_roundtrip_verified':True}}
-        self.lib.parsed_plan=lambda key,index:{}
-        self.lib.apply_plan=lambda team,plan:None
+        self.app.validate_scenario=lambda value:value
+        exported=[]
+        def export_fmf(data):
+            exported.append(data)
+            return {'file_base64':base64.b64encode(archive(99)).decode(),
+                'report':{'native_roundtrip_verified':True}}
+        self.app.export_fmf=export_fmf
+        report=league_report([opponent(77,2,'乙队','高位逼抢'),opponent(88,3,'丙队','低位防守')],
+            unrecovered=[{'club_uid':4,'name':'丁队','reason':'教练偏好预设尚不可用'}])
+        def preset(lib,key,candidate):
+            if candidate=='coach:88':raise ValueError('原装预设内容已改变')
+            return preset_team()
         directory=self.root/'out';directory.mkdir()
-        coach={'teams':[{'team_id':77,'club_uid':2,'name':'乙队','preset_name':'高位逼抢'}]}
-        with mock.patch.object(desktop_coach_presets,'ensure',return_value=coach),\
-             mock.patch.object(desktop_coach_presets,'preset_tactic',side_effect=ValueError('原装预设内容已改变')):
-            result=self.lib.export_tactics(key,1,['stored:0','coach:77'],str(directory))
-        self.assertEqual([e['target']for e in result['files']],['stored:0'])
-        failure=result['failures'][0]
-        self.assertEqual((failure['target'],failure['club_uid'],failure['club']),('coach:77',2,'乙队'))
-        self.assertEqual(failure['tactic_name'],'教练偏好预设 · 高位逼抢')
-        self.assertIn('原装预设内容已改变',failure['error'])
+        with mock.patch.object(self.lib,'inspect_opponents',return_value=report),\
+             mock.patch.object(desktop_coach_presets,'preset_tactic',side_effect=preset):
+            result=self.lib.export_league_tactics(key,1,str(directory))
+        root=Path(result['directory'])
+        self.assertEqual([(entry['club'],entry['tactic_name'])for entry in result['files']],[('乙队','高位逼抢')])
+        self.assertEqual(fm27_fmf.tactics_plan((root/result['files'][0]['file']).read_bytes()),sample_plan(99))
+        failures={(failure['club_uid'],failure['error'])for failure in result['failures']}
+        self.assertIn((3,'原装预设内容已改变'),failures)
+        self.assertIn((4,'教练偏好预设尚不可用'),failures)
+        self.assertEqual(result['league'],{'league_id':17,'club_count':4})
+        self.assertEqual(result['manifest']['source']['save_id'],key)
+        self.assertEqual([(call['side'],call['scenario']['teams'][1]['name'])for call in exported],[(1,'对手')])
+        empty=self.root/'empty';empty.mkdir()
+        with mock.patch.object(self.lib,'inspect_opponents',return_value=report),\
+             mock.patch.object(desktop_coach_presets,'preset_tactic',side_effect=ValueError('不可用')):
+            with self.assertRaises(ValueError)as caught:
+                self.lib.export_league_tactics(key,1,str(empty))
+        self.assertIn('没有可导出',str(caught.exception))
+        self.assertEqual(os.listdir(empty),[])
+        for value in [None,'relative/path',str(self.root/'missing')]:
+            with self.subTest(directory=value),self.assertRaises(ValueError):
+                self.lib.export_league_tactics(key,1,value)
+
+    def test_import_league_tactics_pool_dedupes_and_names_by_club(self):
+        key,_=self.save()
+        with mock.patch.object(self.lib,'begin_opponents',return_value={'status':'reading','stage':'读取中'}):
+            self.assertEqual(self.lib.import_league_tactics_pool(key,1,{'teams':[]}),{'status':'reading','stage':'读取中'})
+        entries=[{'name':'已有战术','weight':2,'tactic':pool_entry('已有战术','1')['tactic']}]
+        scenario={'teams':[{'name':'甲'},{'name':'乙'}],
+            'away_tactic_pool':{'profile':fm27_tactic_pool.PROFILE,'enabled':True,'entries':entries,
+                'uniform':{'enabled':False,'attribute_value':12}}}
+        original=copy.deepcopy(scenario)
+        report=league_report([opponent(77,2,'乙队','高位逼抢'),opponent(88,3,'丙队','高位逼抢'),
+                              opponent(99,4,'丁队','边路传中')],
+            unrecovered=[{'club_uid':5,'name':'戊队','reason':'教练偏好预设尚不可用'}])
+        preset_teams={'coach:77':preset_team(extra='1'),'coach:88':preset_team(extra='2'),
+                      'coach:99':preset_team(extra='2')}
+        self.app.validate_scenario=mock.Mock(side_effect=lambda value:value)
+        with mock.patch.object(self.lib,'begin_opponents',return_value={'status':'complete'}),\
+             mock.patch.object(self.lib,'inspect_opponents',return_value=report),\
+             mock.patch.object(desktop_coach_presets,'preset_tactic',
+                 side_effect=lambda lib,key,candidate:preset_teams[candidate]):
+            value=self.lib.import_league_tactics_pool(key,1,scenario)
+        self.assertEqual(value['status'],'complete')
+        self.assertEqual(value['imported'],[{'club_uid':3,'club':'丙队','tactic_name':'高位逼抢'}])
+        self.assertEqual((value['duplicates'],value['skipped_unavailable']),(2,1))
+        pool=value['scenario']['away_tactic_pool']
+        self.assertEqual([entry['name']for entry in pool['entries']],['已有战术','丙队'])
+        self.assertEqual(pool['entries'][-1]['tactic']['native_extra_team_bits'],'2')
+        self.assertEqual(pool['uniform'],{'enabled':False,'attribute_value':12})
+        self.assertTrue(pool['enabled'])
+        self.assertEqual([row['name']for row in value['pool']['entries']],['已有战术','丙队'])
+        self.assertEqual(value['league'],{'league_id':17,'club_count':4})
+        self.assertEqual(scenario,original)
+        self.app.validate_scenario.assert_called_once()
+
+    def test_import_league_tactics_pool_creates_default_pool(self):
+        key,_=self.save()
+        scenario={'teams':[{'name':'甲'},{'name':'乙'}]}
+        self.app.validate_scenario=lambda value:value
+        report=league_report([opponent(77,2,'乙队','高位逼抢')],unrecovered=[])
+        with mock.patch.object(self.lib,'begin_opponents',return_value={'status':'complete'}),\
+             mock.patch.object(self.lib,'inspect_opponents',return_value=report),\
+             mock.patch.object(desktop_coach_presets,'preset_tactic',return_value=preset_team(extra='5')):
+            value=self.lib.import_league_tactics_pool(key,1,scenario)
+        pool=value['scenario']['away_tactic_pool']
+        self.assertEqual((pool['enabled'],len(pool['entries'])),(False,1))
+        self.assertEqual(pool['entries'][0]['name'],'乙队')
+        self.assertEqual(value['imported'],[{'club_uid':2,'club':'乙队','tactic_name':'高位逼抢'}])
+        self.assertEqual((value['duplicates'],value['skipped_unavailable']),(0,0))
+        self.assertNotIn('away_tactic_pool',scenario)
+
+    def test_import_league_tactics_pool_enforces_max_entries(self):
+        key,_=self.save()
+        entries=[{'name':f'已有{number}','weight':1,'tactic':pool_entry(f'已有{number}',str(number))['tactic']}
+                 for number in range(fm27_tactic_pool.MAX_ENTRIES)]
+        scenario={'teams':[{'name':'甲'},{'name':'乙'}],
+            'away_tactic_pool':{'profile':fm27_tactic_pool.PROFILE,'enabled':False,'entries':entries,
+                'uniform':{'enabled':True,'attribute_value':15}}}
+        self.app.validate_scenario=lambda value:value
+        report=league_report([opponent(77,2,'乙队','高位逼抢')],unrecovered=[])
+        with mock.patch.object(self.lib,'begin_opponents',return_value={'status':'complete'}),\
+             mock.patch.object(self.lib,'inspect_opponents',return_value=report),\
+             mock.patch.object(desktop_coach_presets,'preset_tactic',return_value=preset_team(extra='999')):
+            with self.assertRaises(ValueError)as caught:
+                self.lib.import_league_tactics_pool(key,1,scenario)
+        self.assertIn('最多保存',str(caught.exception))
+
+class ReusableSourceTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.temp_root=ROOT/'build/test-temp';cls.temp_root.mkdir(parents=True,exist_ok=True)
+
+    def setUp(self):
+        self.holder=tempfile.TemporaryDirectory(dir=self.temp_root);self.root=Path(self.holder.name)
+        self.app=_App(self.root);self.lib=desktop_save_mode.SaveLibrary(self.app)
+
+    def tearDown(self):
+        desktop_save_mode.dataset.cache_clear();self.holder.cleanup()
+
+    def test_requires_schema_3(self):
+        digest='b'*64;folder=self.lib.root/'fedcba9876543210';folder.mkdir(parents=True)
+        data={'source':SOURCE['source'],'source_sha256':digest,'reader_compatibility_profile':desktop_save_compat.PROFILE,
+              'first_team_counts':{},'caches':[],'tactics':[],'clubs':[],'schema':2}
+        self.lib.write(folder/'progress.json',{'status':'complete'})
+        self.lib.write(folder/'dataset.json',data)
+        self.assertIsNone(self.lib.reusable_source(digest))
+        data['schema']=3
+        self.lib.write(folder/'dataset.json',data)
+        (folder/'player_index.json').write_text('{}',encoding='utf8');(folder/'rosters').mkdir()
+        desktop_save_mode.dataset.cache_clear()
+        self.assertEqual(self.lib.reusable_source(digest),folder)
 
 if __name__=='__main__':
     unittest.main()

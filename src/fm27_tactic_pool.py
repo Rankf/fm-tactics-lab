@@ -8,6 +8,10 @@ DEFAULT_ATTRIBUTE_VALUE=15
 MAX_NAME=60
 MAX_WEIGHT=1000
 POSITION_ATTRIBUTES=15
+POSITION_FAMILIARITY=20
+POSITION_ATTRIBUTE_INDEX={'GK':0,'SW':1,'DL':2,'DC':3,'DCR':3,'DCL':3,'DR':4,'DM':5,'DMC':5,'DMR':5,'DML':5,
+    'ML':6,'MC':7,'MCL':7,'MCR':7,'MR':8,'AML':9,'AMC':10,'AMCL':10,'AMCR':10,'AMR':11,
+    'ST':12,'STR':12,'STL':12,'WBL':13,'WBR':14}
 
 
 def defaults():
@@ -160,10 +164,23 @@ def apply(team,entry,uniform=None):
     options=_uniform(uniform)if uniform is not None else None
     if options and options['enabled']:
         value=options['attribute_value']
-        for player in team.get('players',[]):
+        players=team.get('players',[])
+        for player in players:
             if not isinstance(player,dict)or not isinstance(player.get('attributes'),list)or len(player['attributes'])!=69:
                 raise ValueError('客队球员属性不完整，无法统一为界面值')
-            player['attributes']=[value if index<POSITION_ATTRIBUTES else value*5 for index in range(69)]
+            attributes=player['attributes']
+            for index in range(POSITION_ATTRIBUTES,69):attributes[index]=value*5
+            attributes[POSITION_ATTRIBUTE_INDEX['GK']]=1
+        lineup=team.get('lineup')
+        if isinstance(lineup,list):
+            for phase in team.get('phases')or[]:
+                if not isinstance(phase,list):continue
+                for slot,cell in enumerate(phase):
+                    if slot>=len(lineup)or not isinstance(cell,dict):continue
+                    player_index=lineup[slot]
+                    if type(player_index)is not int or not 0<=player_index<len(players):continue
+                    familiar=POSITION_ATTRIBUTE_INDEX.get(cell.get('position'))
+                    if familiar is not None:players[player_index]['attributes'][familiar]=POSITION_FAMILIARITY
     return team
 
 

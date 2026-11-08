@@ -54,7 +54,9 @@ The EXE includes its Python runtime. Players do not need Python or a compiler. T
 
 Opponent tactics use a built-in preset selected from the head coach's saved style and formation preferences. A team is selectable when both the coach and preferences can be verified. Opponent squads load in batches as needed. You can track or cancel match preparation.
 
-After the save is read, **导出球队战术** (Export team tactics) writes your stored tactics and same-league opponents' coach-preference presets into a local folder. Select teams individually or select all same-league teams. Opponent files are preset approximations, not the actual match-day tactics.
+## Save tactics
+
+On **存档战术** (Save Tactics), read a save to list same-league opponents' coach-preference presets, excluding your club. Export all of them into a local folder or add them to the away tactic pool in one click. Saves store no country or league names, so the page groups teams by the current league. Exported opponent files are preset approximations, not the actual match-day tactics.
 
 ## Free Simulation
 
@@ -73,9 +75,9 @@ Open **战术板** (Tactics Board):
 - Drag shirts to swap players while keeping roles, duties and instructions attached to their positions. Moving to an empty position prompts for confirmation if any settings need to change.
 - Adjust mentality, passing, pressing and other team instructions.
 - Configure or import set-piece routines separately in **定位球与职责** (Set Pieces and Responsibilities).
-- **Away tactic pool**: import several tactic FMF files under the away side. With random draw enabled, each match draws one away tactic by weight.
+- **Away tactic pool**: add same-league opponent presets from **存档战术** in one click. With random mode enabled in the bottom bar, each match draws one away tactic by weight.
 
-Imported tactics remain editable. When the away tactic pool is enabled, every away player's positional familiarity and attributes can be unified to a configurable interface value (15 by default). Draws are derived from the task seed and reproduce within the same experiment.
+Imported tactics remain editable. When the away tactic pool is enabled, every away player's ability attributes can be unified to a configurable interface value (15 by default), while starters receive maximum positional familiarity for the drawn tactic's positions. Draws are derived from the task seed and reproduce within the same experiment.
 
 ### 3. Run matches
 

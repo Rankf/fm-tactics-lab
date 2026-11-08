@@ -348,6 +348,11 @@ import desktop_save_mode
 import sys
 SAVE_LIBRARY=desktop_save_mode.SaveLibrary(sys.modules[__name__])
 
+def require_league_idle(label):
+    if SAVE_LIBRARY.active:raise ValueError('请等待存档及历史输入解析完成')
+    with LOCK:
+        if any(j['status']in ('queued','running')for j in JOBS.values()):raise ValueError('请等待比赛结束后再'+label)
+
 def experiment_name(value, fallback):
     if value is None: return fallback
     if not isinstance(value,str) or not 1<=len(value.strip())<=100 or any(ord(c)<32 for c in value):
@@ -532,17 +537,6 @@ def import_fmf(data):
     report={'source_sha256':hashlib.sha256(payload).hexdigest(),'tactic_name':team['tactic_name'],'core_bytes_consumed':parsed['consumed'],'decoded_bytes':parsed['size'],'preserved_extra_native_bits':[i for i in range(128)if int(team['native_extra_team_bits'])>>i&1],'normalization':repaired['changes'],'retained_sections':['球员与属性','定位球套路','针对性指令','主罚与队长名单'],'notice':'已导入当前球队的双阶段阵型、角色、指令及心态。球员、定位球、针对性指令和主罚名单保留当前配置。'}
     (directory/'import_report.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf8');return {'scenario':repaired['scenario'],'report':report}
 
-def import_pool_fmf(data):
-    scenario=validate_scenario(data['scenario'])
-    imported=import_fmf({'side':1,'scenario':scenario,'file_base64':data['file_base64']})
-    entry=fm27_tactic_pool.entry_from_team(imported['scenario']['teams'][1],data.get('name'))
-    pool=scenario.get('away_tactic_pool')or fm27_tactic_pool.defaults();entries=list(pool['entries'])
-    if len(entries)>=fm27_tactic_pool.MAX_ENTRIES:raise ValueError(f'客队战术池最多保存 {fm27_tactic_pool.MAX_ENTRIES} 套战术')
-    entries.append(entry)
-    scenario['away_tactic_pool']=fm27_tactic_pool.normalize({**pool,'entries':entries})
-    scenario=validate_scenario(scenario)
-    report=dict(imported['report']);report['tactic_name']=entry['name'];report['sha256']=report.get('source_sha256')
-    return {'scenario':scenario,'entry':entry,'report':report,'pool':fm27_tactic_pool.summary(scenario['away_tactic_pool'])}
 def export_setpiece(data):
     side=integer(data['side'],0,1,'球队');scenario=validate_scenario(data['scenario']);kind=integer(data['type'],0,9,'定位球类型');variant=integer(data['variant'],0,2,'套路序号');rows=scenario['teams'][side]['setpieces']['routines'][str(kind)]
     if variant>=len(rows):raise ValueError('套路不存在')
@@ -781,6 +775,7 @@ class Handler(BaseHTTPRequestHandler):
         known.update({'/save-mode.js':'save-mode.js','/save-mode.css':'save-mode.css','/engine-settings.js':'engine-settings.js'})
         known['/squad-editor.js']='squad-editor.js'
         known['/tactic-pool.js']='tactic-pool.js'
+        known['/tactic-library.js']='tactic-library.js'
         if path in known:
             name=known[path];kind={'html':'text/html','js':'text/javascript','css':'text/css'}[name.split('.')[-1]]
             return self.send((WEB/name).read_bytes(),kind=kind+'; charset=utf-8')
@@ -790,7 +785,7 @@ class Handler(BaseHTTPRequestHandler):
         if origin and origin!=f'http://{self.headers.get("Host")}':return self.send({'error':'拒绝跨站调用'},403)
         try:
             length=int(self.headers.get('Content-Length',0))
-            if not 0<length<=(8000000 if urlparse(self.path).path in ('/api/import-fmf','/api/pool/import-fmf')else 1500000):raise ValueError('请求大小无效')
+            if not 0<length<=(6000000 if urlparse(self.path).path=='/api/import-fmf'else 1500000):raise ValueError('请求大小无效')
             data=json.loads(self.rfile.read(length));path=urlparse(self.path).path
             if path=='/api/jobs/rename':
                 with LOCK:
@@ -819,13 +814,14 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith('/api/save/'):
                 if path=='/api/save/pick': return self.send({'path':desktop_save_mode.choose_save_file()})
                 if path=='/api/save/pick-folder': return self.send({'path':desktop_save_mode.choose_folder()})
-                if path=='/api/save/export-targets':
-                    return self.send(SAVE_LIBRARY.export_targets(data['id'],data['club_uid']))
-                if path=='/api/save/export-tactics':
-                    if SAVE_LIBRARY.active: raise ValueError('请等待存档解析完成')
-                    with LOCK:
-                        if any(j['status']in ('queued','running')for j in JOBS.values()): raise ValueError('请等待比赛结束后再导出战术')
-                    return self.send(SAVE_LIBRARY.export_tactics(data['id'],data['club_uid'],data['targets'],data['directory']))
+                if path=='/api/save/league-library':
+                    return self.send(SAVE_LIBRARY.league_library(data['id'],data['club_uid']))
+                if path=='/api/save/league-export':
+                    require_league_idle('导出存档战术')
+                    return self.send(SAVE_LIBRARY.export_league_tactics(data['id'],data['club_uid'],data['directory']))
+                if path=='/api/save/league-pool':
+                    require_league_idle('导入客队战术池')
+                    return self.send(SAVE_LIBRARY.import_league_tactics_pool(data['id'],data['club_uid'],data['scenario']))
                 if path=='/api/save/import': return self.send(SAVE_LIBRARY.start(data['path']),202)
                 if path=='/api/save/club': return self.send(SAVE_LIBRARY.club(data['id'],data['club_uid']))
                 if path=='/api/save/load':
@@ -862,10 +858,9 @@ class Handler(BaseHTTPRequestHandler):
                     ENGINE_DLL_SHA256=ENGINE_COMPATIBILITY['actual_dll_sha256']
                     (RUNS.parent/'game-root.txt').write_text(selected,encoding='utf-8-sig')
                     return self.send(ENGINE_COMPATIBILITY)
-            if path in ('/api/import-fmf','/api/pool/import-fmf','/api/export-fmf','/api/export-setpiece'):
+            if path in ('/api/import-fmf','/api/export-fmf','/api/export-setpiece'):
                 desktop_engine.require_available(ENGINE_COMPATIBILITY)
             if path=='/api/import-fmf':return self.send(import_fmf(data))
-            if path=='/api/pool/import-fmf':return self.send(import_pool_fmf(data))
             if path=='/api/export-fmf':return self.send(export_fmf(data))
             if path=='/api/export-setpiece':return self.send(export_setpiece(data))
             if path=='/api/validate':return self.send({'scenario':validate_scenario(data),'records':(len(encode_scenario(data))-12)//20})
