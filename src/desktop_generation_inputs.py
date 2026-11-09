@@ -58,6 +58,7 @@ def export(source,folder,include_manager_section=False):
                 job_error=None
                 try:jobs=[plain(j)for j in save.job_vacancies()if j.club_uid in wanted]
                 except (AttributeError,ValueError,RuntimeError)as error:jobs=[];job_error=str(error)
+                nations={str(n.nation_id):n.database_id for n in save.nations()}
                 sections={}
                 for name in (('tactics_man','manager_manager')if include_manager_section else('tactics_man',)):
                     if name not in save.info.section_schemas:continue
@@ -69,7 +70,7 @@ def export(source,folder,include_manager_section=False):
                     'clubs':[c for c in clubs if c['uid']in wanted],
                     'players':[plain(p)for p in players],'staff':staff,'player_selectors':selectors,
                     'fixtures':[f for f in fixtures if f.get('home_club_uid')in wanted and f.get('away_club_uid')in wanted],
-                    'job_vacancies':jobs,'job_reader_error':job_error,'sections':sections,
+                    'job_vacancies':jobs,'job_reader_error':job_error,'sections':sections,'nations':nations,
                     'source_first_team_counts':{str(c):first_counts.get(str(c),0)for c in wanted},
                     'admitted_to_simulator':False,'unresolved':['tactical_responsibility_references','native_marshalling','complete_match_context']}
     finally:reader._read_ability_block=original_read;reader._PersonObject=original_person

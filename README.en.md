@@ -66,6 +66,8 @@ Opponent tactics use a built-in preset selected from the head coach's saved styl
 
 On **存档战术** (Save Tactics), read a save, then pick any loaded league in the game world to list every opponent head coach's preferences, excluding your club. Each coach produces two original game presets: one for his primary preferred formation and one for his secondary formation (tactic 1 and 2). Export the league's tactics into a local folder or add them to the away tactic pool in one click; pool imports are not deduplicated, so the same tactic may be added more than once. Exported files follow `club-coach-tactic N`. League and country names are read from the local FM27 game database and follow the interface language (Chinese or English); each league is listed once, using the active or nearest schedule, and unavailable names fall back to league numbers. Exported files are preset approximations, not the actual match-day tactics.
 
+Opponents in your current league can also generate a **real AI tactic**: the tool reads the club's current head coach, current squad and your own coach, runs the original engine's zero-tick match preparation, and reads back the AI-generated two-phase plan (mentality, team instructions, roles and duties, player instructions and phase mapping). It exports as `club-coach-real AI tactic.fmf`. This is the engine's real output for the preview context (your club at home, preview seed 0), not a recording of a finished match; a real fixture regenerates the plan from its own squad and context.
+
 ## Free Simulation
 
 ### 1. Configure both squads

@@ -10,6 +10,8 @@ import time
 import fm27_fmf
 
 PROFILE='saved-tactic-export-v2'
+REAL_PROFILE='saved-tactic-real-ai-export-v1'
+REAL_LABEL='真实AI战术'
 MAX_FILES=400
 MAX_PLAN_BYTES=4*1024*1024
 ILLEGAL=re.compile(r'[<>:"/\\|?*]')
@@ -39,11 +41,15 @@ def tactic_file_name(club,coach,index):
     parts.append(f'第{number}套战术')
     return '-'.join(part for part in parts if part)
 
+def real_tactic_file_name(club,coach):
+    parts=[safe_component(club,'俱乐部',24),safe_component(coach,'主教练',24),REAL_LABEL]
+    return '-'.join(part for part in parts if part)
+
 def _stamp():
     return time.strftime('%Y%m%d-%H%M%S')
 
-def _directory(base):
-    stem='FM27存档战术-'+_stamp()
+def _directory(base,stem='FM27存档战术'):
+    stem=stem+'-'+_stamp()
     for number in range(1,1000):
         candidate=base/(stem if number==1 else f'{stem}-{number}')
         try:candidate.mkdir()
@@ -116,7 +122,17 @@ def _notice(source,file_count):
         '每套 .fmf 可在工具中重新导入；manifest.json 记录文件清单、内嵌计划校验值与导出依据。']
     return '\n'.join(lines)+'\n'
 
-def write(directory,source,items):
+def real_notice(source,file_count):
+    lines=['FM27 真实AI战术导出','',
+        f'本目录由 FM Tactics Lab 调用原版引擎生成，共 {file_count} 套战术。',
+        f"来源存档：{source.get('source') or '未知'}",
+        f"存档日期：{source.get('date') or '未知'}，游戏版本：{source.get('build') or '未知'}",
+        '每套战术按该队现任主教练和当前阵容（按能力选取 23 人）由本机原版引擎的 AI 准备流程生成，并从引擎回读完整计划后写出；包含心态、球队指令、双阶段角色与职责、个人指令和阶段映射。',
+        '这是引擎在预览上下文（你的球队主场、预览种子 0）下的真实输出，不是存档中已结束比赛的录像战术；重跑会随上下文和种子变化。',
+        'manifest.json 记录文件清单、内嵌计划校验值与生成依据。']
+    return '\n'.join(lines)+'\n'
+
+def write(directory,source,items,stem=None,notice=None,profile=None):
     if isinstance(directory,Path):base=directory.expanduser()
     elif isinstance(directory,str)and directory.strip():base=Path(directory).expanduser()
     else:raise ValueError('请选择导出目录')
@@ -124,26 +140,28 @@ def write(directory,source,items):
     base=base.resolve()
     if not base.is_dir():raise ValueError('所选导出目录不存在，请重新选择')
     rows=_rows(items);source=_source(source)
-    root=_directory(base)
+    root=_directory(base,stem or 'FM27存档战术')
     try:
         used=set();files=[]
         for row in rows:
-            stem=_unique(row['name'],f"战术{row['index']or 1}",used)
-            target=root/(stem+'.fmf')
+            name=_unique(row['name'],f"战术{row['index']or 1}",used)
+            target=root/(name+'.fmf')
             if not _inside(root,target):raise ValueError('导出路径越界，已停止')
             _atomic(target,row['payload'])
             files.append({'file':target.relative_to(root).as_posix(),'club_uid':row['club_uid'],
-                'club':row['club'],'coach':row['coach'],'index':row['index'],'name':stem,
+                'club':row['club'],'coach':row['coach'],'index':row['index'],'name':name,
                 'target':row['target'],'tactic_name':row['tactic_name'],'preset_name':row['preset_name'],
                 'sha256':hashlib.sha256(row['payload']).hexdigest(),'size':len(row['payload']),
                 'plan_sha256':hashlib.sha256(row['plan']).hexdigest(),'plan_size':len(row['plan']),
                 'report':row['report']})
-        manifest={'profile':PROFILE,'created':datetime.now().astimezone().isoformat(timespec='seconds'),
+        profile=profile or PROFILE
+        manifest={'profile':profile,'created':datetime.now().astimezone().isoformat(timespec='seconds'),
             'source':source,'files':files,
             'notice':f'本目录包含 {len(files)} 套 FM27 战术文件，内嵌计划均已校验。'}
+        text=notice(source,len(files)) if callable(notice) else (notice if isinstance(notice,str) and notice.strip() else _notice(source,len(files)))
         _atomic(root/'manifest.json',json.dumps(manifest,ensure_ascii=False,indent=2).encode('utf8'))
-        _atomic(root/'导出说明.txt',_notice(source,len(files)).encode('utf8'))
+        _atomic(root/'导出说明.txt',text.encode('utf8'))
     except Exception:
         shutil.rmtree(root,ignore_errors=True)
         raise
-    return {'directory':str(root),'profile':PROFILE,'manifest':manifest,'files':files,'failures':[]}
+    return {'directory':str(root),'profile':profile,'manifest':manifest,'files':files,'failures':[]}

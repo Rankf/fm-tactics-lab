@@ -65,12 +65,15 @@ function libraryExportResult(){
  return `${result?`<div class="notice">已导出 ${result.files?.length||0} 个战术文件到 ${esc(result.directory||'')}</div>`:''}${failures.length?`<details><summary>失败 ${failures.length} 项</summary>${failures.map(f=>`<p class="tiny">${esc(f.club||f.name||'')}${f.tactic_name?' · '+esc(f.tactic_name):''}：${esc(f.error||'写入失败')}</p>`).join('')}</details>`:''}`;
 }
 function libraryReportBody(report){
- const teams=report.teams||[],failures=report.failures||[];
- const rows=teams.map(team=>`<tr><td>${esc(team.name||'')}</td><td>${esc(team.coach_name||'—')}</td><td>${libraryVariant(team,1)}</td><td>${libraryVariant(team,2)}</td><td class="tiny muted">${team.error?esc(team.error):team.available===false?'暂不可用':'可用'}</td></tr>`).join('');
- const table=teams.length?`<div class="table-scroll"><table class="library-table"><thead><tr><th>球队</th><th>教练</th><th>第一套</th><th>第二套</th><th>状态</th></tr></thead><tbody>${rows}</tbody></table></div>`:`<p class="tiny muted">没有找到对手球队</p>`;
+ const teams=report.teams||[],failures=report.failures||[],own=!!report.league?.own;
+ const real=team=>own?`<td class="tiny"><button type="button" class="button small" data-real-tactic="${team.club_uid}" ${team.available===false?'disabled':''}>生成</button></td>`:'';
+ const rows=teams.map(team=>`<tr><td>${esc(team.name||'')}</td><td>${esc(team.coach_name||'—')}</td><td>${libraryVariant(team,1)}</td><td>${libraryVariant(team,2)}</td><td class="tiny muted">${team.error?esc(team.error):team.available===false?'暂不可用':'可用'}</td>${real(team)}</tr>`).join('');
+ const head=own?'<th>球队</th><th>教练</th><th>第一套</th><th>第二套</th><th>状态</th><th>真实战术</th>':'<th>球队</th><th>教练</th><th>第一套</th><th>第二套</th><th>状态</th>';
+ const table=teams.length?`<div class="table-scroll"><table class="library-table"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`:`<p class="tiny muted">没有找到对手球队</p>`;
  const details=failures.length?`<details><summary>失败 ${failures.length} 项</summary>${failures.map(f=>`<p class="tiny">${esc(f.name||'')}：${esc(f.error||'读取失败')}</p>`).join('')}</details>`:'';
+ const hint=own?'<p class="tiny muted">真实战术由本机原版引擎生成，首次较慢。</p>':'';
  const controls=`<div class="save-team-controls"><label>导出目录<input id="library-directory" value="${esc(libraryDirectory())}" placeholder="选择本机文件夹"></label><button id="library-folder" class="button">选择目录…</button><button id="library-export" class="button">导出全部战术</button><button id="library-pool" class="button primary">导入客队战术池</button></div>`;
- return `${table}${details}${controls}${libraryExportResult()}`;
+ return `${table}${details}${hint}${controls}${libraryExportResult()}`;
 }
 function libraryLeagueCard(){
  if(!libraryLeague)return '';
@@ -109,6 +112,7 @@ function bindLibrary(){
  if($('#library-folder'))$('#library-folder').onclick=async()=>{try{const r=await api('/api/save/pick-folder',{});if(r.path){localStorage.setItem('fm27-export-directory',r.path);$('#library-directory').value=r.path}}catch(e){toast('选择目录失败：'+e.message)}};
  if($('#library-export'))$('#library-export').onclick=exportLibrary;
  if($('#library-pool'))$('#library-pool').onclick=importLibraryPool;
+ $$('[data-real-tactic]').forEach(button=>button.onclick=()=>exportRealTactic(button));
 }
 async function readLibrary(){
  const path=$('#library-path')?.value.trim()||'';
@@ -193,6 +197,18 @@ async function exportLibrary(){
   libraryExport=result;libraryRefresh();
   toast(`已导出 ${result.files?.length||0} 个战术文件到 ${result.directory||directory}`);
  }catch(e){toast('导出失败：'+e.message);if($('#library-export')){$('#library-export').disabled=false;$('#library-export').textContent='导出全部战术'}}
+}
+async function exportRealTactic(button){
+ const id=librarySave?.id,league=libraryLeague,directory=$('#library-directory')?.value.trim()||'';
+ if(!id||!league)return;
+ if(!directory){toast('请填写或选择导出目录');return}
+ const label=button.textContent;button.disabled=true;button.textContent='生成中';
+ try{
+  const result=await api('/api/save/league-real-tactic',{id,league,club_uid:+button.dataset.realTactic,directory});
+  localStorage.setItem('fm27-export-directory',directory);
+  libraryExport={...result,failures:[]};libraryRefresh();
+  toast(`已生成真实战术文件：${result.files?.[0]?.file||''}`);
+ }catch(e){toast('真实战术生成失败：'+e.message);button.disabled=false;button.textContent=label}
 }
 async function importLibraryPool(){
  const button=$('#library-pool');if(!button||!librarySave?.id||!libraryLeague)return;

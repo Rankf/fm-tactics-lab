@@ -24,6 +24,7 @@ import desktop_ai_state
 import desktop_generation_catalog
 import desktop_static_plans
 import desktop_observed_plans
+import desktop_real_generation
 import desktop_coach_presets
 import desktop_source_plans
 import desktop_game_db_names
@@ -98,6 +99,7 @@ class SaveLibrary:
         self.pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix='save-reader')
         self.lock = threading.RLock()
         self.roster_lock = threading.RLock()
+        self.real_export_lock = threading.Lock()
         self._names = {}
         self.active = None
 
@@ -302,6 +304,7 @@ class SaveLibrary:
     def _league_rows(self,folder,data):
         self.check_binding(folder)
         clubs,nations,competitions,maps=self._league_maps(folder,data)
+        managed={m.get('club_uid')for m in data.get('managed')or []}
         rows=[]
         for entry in data.get('leagues')or[]:
             competition_id=entry.get('competition_id')
@@ -317,6 +320,7 @@ class SaveLibrary:
             rows.append({'key':entry['key'],'competition_id':competition_id,
                 'name':name or f'联赛 #{competition_id}','nation':nation,
                 'club_count':len(entry.get('club_uids')or[]),'season':entry.get('season'),
+                'own':bool(set(entry.get('club_uids')or [])&managed),
                 'first_date':entry.get('first_date'),'last_date':entry.get('last_date')})
         rows.sort(key=lambda row:(row['nation']or'~',row['name'],row['key']))
         return rows,maps
@@ -483,6 +487,46 @@ class SaveLibrary:
         result=desktop_save_export.write(str(target),self._source(key,folder,data),rows)
         result['failures']=failures;result['league']=header
         return result
+
+    def export_real_ai_tactic(self,key,league,club_uid,directory):
+        folder=self.folder(key);self.check_binding(folder)
+        data,entry=self._league_entry(folder,league)
+        club_uid=int(club_uid)
+        if club_uid not in set(entry.get('club_uids')or []):raise ValueError('该球队不属于所选联赛')
+        own=[m.get('club_uid')for m in data.get('managed')or []]
+        if len(own)!=1:raise ValueError('真实AI战术导出需要单一玩家执教的存档')
+        own=own[0]
+        if own not in set(entry.get('club_uids')or []):raise ValueError('真实AI战术只支持你当前执教的联赛')
+        if club_uid==own:raise ValueError('玩家球队的战术来自你自己的存档战术，不走 AI 生成')
+        self.app.desktop_engine.require_available(self.app.ENGINE_COMPATIBILITY)
+        if not self.real_export_lock.acquire(blocking=False):raise ValueError('正在生成真实AI战术，请等待当前任务完成')
+        try:
+            value=desktop_real_generation.preview(self,key,own,club_uid)
+            team=value['team'];plan=value['native_plan']
+            coach=value.get('opponent_coach')or''
+            stem=desktop_save_export.real_tactic_file_name(team.get('name')or str(club_uid),coach)
+            context=copy.deepcopy(self.app.DEFAULT)
+            context['teams'][1]=copy.deepcopy(team)
+            exported=self.app.export_fmf({'side':1,'scenario':context,'name':stem})
+            try:payload=base64.b64decode(exported['file_base64'],validate=True)
+            except (KeyError,ValueError):raise ValueError('原版战术序列化未返回有效文件')
+            report=dict(exported.get('report')or {})
+            report.update({'source':'original_engine_generation','preview_seed':0,
+                'context':'你的球队主场、双方当前阵容（按能力选取 23 人）、预览种子 0；正式比赛会按实际名单和上下文重新生成',
+                'payload_sha256':value['payload_sha256'],'config_sha256':value['config_sha256'],
+                'generated_mentality':plan.get('mentality'),'generated_team_bits':plan.get('team_bits'),
+                'lineup_source_uids':plan.get('lineup_source_uids'),
+                'opponent_roster':value.get('opponent_roster')})
+            item={'club_uid':club_uid,'club':team.get('name')or str(club_uid),'coach':coach,'index':None,
+                'name':stem,'target':'generated:'+str(club_uid),'tactic_name':stem,'preset_name':'',
+                'payload':payload,'report':report}
+            result=desktop_save_export.write(directory,self._source(key,folder,data),[item],
+                stem='FM27真实AI战术',notice=desktop_save_export.real_notice,profile=desktop_save_export.REAL_PROFILE)
+            result.update({'club_uid':club_uid,'club':item['club'],'coach':coach,
+                'league':self._league_header(key,league)})
+            return result
+        finally:
+            self.real_export_lock.release()
 
     def import_league_tactics_pool(self,key,league,scenario):
         folder=self.folder(key)
