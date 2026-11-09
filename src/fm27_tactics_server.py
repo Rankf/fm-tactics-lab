@@ -630,7 +630,7 @@ def execute(job,scenarios,seeds):
     execution_settings = {label:s['experimental_execution'] for label,s in scenarios if 'experimental_execution' in s}
     if execution_settings:
         runner.jobs_per_session = 1
-        job.update(runtime_mode='isolated_execution_experiment', jobs_per_native_session=1,
+        job.update(runtime_mode='isolated_pool_execution_experiment' if job.get('_pool_variants') else 'isolated_execution_experiment', jobs_per_native_session=1,
                    experimental_execution=execution_settings)
     with LOCK:
         job['_runner']=runner;job['status']='running';job['started']=time.time()
@@ -728,9 +728,15 @@ def resume_job(job,workers):
                 'uniform':copy.deepcopy(pool.get('uniform',fm27_tactic_pool.defaults()['uniform'])),'entries':copy.deepcopy(entries),
                 'draws':{'total':len(draws),'counts':{str(index):0 for index in range(len(entries))}}}
     for run in job['runs']:
+        expected=dict(scenarios)[run['variant']]
+        if pool:
+            index=job['_pool_draws'][str(run['seed'])]
+            if run.get('tactic_pool_entry',{}).get('index')!=index:
+                raise ValueError('已完成比赛的客队战术与原抽签不符')
+            expected=job['_pool_variants'][run['variant']][index]
         path=job['_dir']/run['log']
         if hashlib.sha256(path.read_bytes()).hexdigest()!=run['log_sha256']:raise ValueError('已完成比赛日志已改变')
-        if inspect_saved_run(job['_dir'],run)['result']!=run['result']:raise ValueError('已完成比赛结果校验失败')
+        if inspect_saved_run(job['_dir'],run,expected)['result']!=run['result']:raise ValueError('已完成比赛结果校验失败')
     if job['completed']>=job['total']:raise ValueError('该实验已经完成')
     if job.get('failures'):job.setdefault('failure_history',[]).extend(copy.deepcopy(job['failures']))
     job.update(status='queued',workers=workers,failures=[],error=None,_cancel=False)
@@ -922,8 +928,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not(pool and pool.get('enabled')):pool=None
                 expanded={}
                 if pool:
-                    if any('experimental_execution'in item or'native_generation'in item for _,item in variants):
-                        raise ValueError('随机客队战术池不能与实验执行力或电脑生成战术同时使用')
+                    if any('native_generation' in item for _,item in variants):
+                        raise ValueError('随机客队战术池不能与电脑生成战术同时使用')
                     expanded={label:[validate_scenario(fm27_tactic_pool.expand({**item,'away_tactic_pool':pool},index))for index in range(len(pool['entries']))]for label,item in variants}
                 with LOCK:
                     desktop_engine.require_available(ENGINE_COMPATIBILITY)

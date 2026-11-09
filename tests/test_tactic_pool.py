@@ -301,6 +301,21 @@ class ApplyTests(unittest.TestCase):
 
 
 class ExpandTests(unittest.TestCase):
+    def test_execution_policy_and_real_player_ca_survive_each_draw(self):
+        source=scenario([entry('甲'),entry('乙')])
+        source['experimental_execution']=[{'understanding':20,'buy_in':35,'opposition':80},
+                                          {'understanding':85,'buy_in':65,'opposition':30}]
+        for i,p in enumerate(source['teams'][1]['players']):
+            p['native_profile']={'current_ability':90+i}
+        before=copy.deepcopy(source)
+        for index in range(2):
+            expanded=pools.expand(source,index)
+            self.assertEqual(expanded['experimental_execution'],source['experimental_execution'])
+            self.assertEqual([p['native_profile']['current_ability']for p in expanded['teams'][1]['players']],
+                             list(range(90,106)))
+            expanded['experimental_execution'][1]['understanding']=0
+        self.assertEqual(source,before)
+
     def test_expand_copies_scenario_and_removes_pool(self):
         source=scenario([entry('甲'),entry('乙')]);snapshot=copy.deepcopy(source)
         expanded=pools.expand(source,1)

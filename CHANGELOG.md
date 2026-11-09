@@ -1,5 +1,13 @@
 # Changelog
 
+## v1109.3 · 2026-11-09
+
+- Allow random away tactic pools with experimental tactical execution.
+- Isolate every execution match and verify native ability contribution, actual roster identity, CA, and manual component scores.
+- Recheck execution receipts against the original drawn inputs when resuming.
+- Preserve current squads and automatic CA/role ability calculation across pool expansion.
+- Validation: 28 accepted native matches with three opponent presets, same-seed A/B, actual cancel/restart/resume, independent replays, CA and role-suitability changes, and the combined UI flow; zero unexpected failures. Automated checks: 72 passed, one Windows symlink-permission skip. These checks establish functional input handling, not tactical superiority.
+
 ## v1109.2 · 2026-11-09
 
 - Follow the Windows display language in the interface and system tray, with Simplified Chinese and English support.
