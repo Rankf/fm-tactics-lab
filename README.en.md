@@ -68,6 +68,8 @@ On **存档战术** (Save Tactics), read a save, then pick any loaded league in 
 
 Opponents in your current league can also batch-generate **real AI tactics**: for each club the tool reads its current head coach, current squad and your own coach, runs the original engine's zero-tick match preparation, and reads back the AI-generated two-phase plan (mentality, team instructions, roles and duties, player instructions and phase mapping). Every opponent produces two plans - tactic 1 for the opponent at home and tactic 2 for the opponent away - and they replace the two list columns (shown as `club home tactic` / `club away tactic`). Generation shows a progress bar, caches finished variants and only fills gaps on later runs. Export as `club-coach-home tactic.fmf` or `club-coach-away tactic.fmf` or import straight into the away tactic pool. This is the engine's real output for the preview context (seed 0), not a recording of a finished match; a real fixture regenerates the plan from its own squad and context. Clubs whose coach profile falls outside the engine's supported range keep their presets and show the failure reason.
 
+![Batch real AI tactic generation progress](docs/screenshots/save-tactics-progress.png)
+
 ## Free Simulation
 
 ### 1. Configure both squads
