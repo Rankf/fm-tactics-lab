@@ -36,6 +36,53 @@ def write(path, value):
             time.sleep(.025)
 
 
+LEAGUE_MIN_MEMBERS=6
+LEAGUE_MAX_MEMBERS=60
+
+
+def _value(row,name):
+    return row.get(name) if isinstance(row,dict) else getattr(row,name,None)
+
+
+def league_catalog(fixtures,clubs,competitions=()):
+    database_ids={}
+    for competition in competitions:
+        competition_id=_value(competition,'id')
+        if type(competition_id)is int:database_ids[competition_id]=_value(competition,'database_id')
+    groups=defaultdict(list)
+    for fixture in fixtures:
+        if _value(fixture,'home_team_slot')!=0 or _value(fixture,'away_team_slot')!=0:continue
+        home,away=_value(fixture,'home_club_uid'),_value(fixture,'away_club_uid')
+        competition_id,stage_id=_value(fixture,'competition_id'),_value(fixture,'stage_id')
+        if type(home)is not int or type(away)is not int or home==away:continue
+        if type(competition_id)is not int or type(stage_id)is not int:continue
+        groups[(competition_id,stage_id,_value(fixture,'season_start_year'))].append(fixture)
+    registry={_value(club,'uid'):club for club in clubs}
+    leagues=[];members=set()
+    for (competition_id,stage_id,season),rows in groups.items():
+        club_uids={_value(row,'home_club_uid')for row in rows}|{_value(row,'away_club_uid')for row in rows}
+        count=len(club_uids)
+        if not LEAGUE_MIN_MEMBERS<=count<=LEAGUE_MAX_MEMBERS:continue
+        pairs={(_value(row,'home_club_uid'),_value(row,'away_club_uid'))for row in rows}
+        if len(pairs)!=count*(count-1):continue
+        if len(rows)>count*(count-1)*2:continue
+        dates=sorted(str(_value(row,'date'))[:10]for row in rows if _value(row,'date')is not None)
+        leagues.append({'key':f'{competition_id}:{stage_id}:{season}','competition_id':competition_id,
+            'stage_id':stage_id,'season':season,'club_uids':sorted(club_uids),'fixture_count':len(rows),
+            'first_date':dates[0]if dates else None,'last_date':dates[-1]if dates else None,'complete':True})
+        members.update(club_uids)
+    leagues.sort(key=lambda entry:entry['key'])
+    league_clubs={}
+    for uid in sorted(members):
+        club=registry.get(uid)
+        if club is None:continue
+        first_team=next((_value(team,'team_id')for team in _value(club,'teams')or ()if _value(team,'slot')==0),None)
+        league_clubs[str(uid)]={'name':_value(club,'name'),'short_name':_value(club,'short_name'),
+            'nation_id':_value(club,'nation_id'),'first_team_id':first_team,'club_unique_id':_value(club,'unique_id')}
+    return {'leagues':leagues,'league_clubs':league_clubs,
+        'competitions':{str(entry['competition_id']):database_ids.get(entry['competition_id'])for entry in leagues}}
+
+
 def extract_match_inputs(save,folder):
     from fmsave._container import match_file_entries,read_directory_entry
     caches=[];seen=set();warnings=[]
@@ -145,6 +192,7 @@ def main(source, folder):
         write(folder/'player_index.json',uid_clubs)
         del decoded,squads
         warnings = []
+        calendar = []
         try:
             progress('识别当前同联赛与本队赛事，不读取历史比赛缓存')
             calendar=save.fixtures()
@@ -153,6 +201,14 @@ def main(source, folder):
         except Exception as error:
             fixtures = []
             warnings.append('赛程读取失败：'+str(error))
+        try:
+            catalog = league_catalog(calendar, clubs, save.competitions())
+        except Exception:
+            catalog = {'leagues': [], 'league_clubs': {}, 'competitions': {}}
+        try:
+            nations = {str(n.nation_id): n.database_id for n in save.nations()}
+        except Exception:
+            nations = {}
         try:
             tactics = [plain(v) for v in save.tactics()]
             selections = [plain(v) for v in save.selections()]
@@ -225,6 +281,8 @@ def main(source, folder):
                   'date':str(info.game_date), 'build':info.build,
                   'managed':managed, 'clubs':clubs, 'player_counts':counts,'first_team_counts':first_counts,
                   'fixtures':fixtures, 'tactics':tactics, 'selections':selections, 'setpieces':setpieces,
+                  'leagues':catalog['leagues'], 'league_clubs':catalog['league_clubs'],
+                  'competitions':catalog['competitions'], 'nations':nations,
                   'caches':caches, 'warnings':warnings}
     after = source.stat()
     if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns):
