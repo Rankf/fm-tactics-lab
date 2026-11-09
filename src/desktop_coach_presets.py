@@ -135,23 +135,39 @@ def opponents(lib,key,own):
              'coach':t,'preset_reference_proven':False}
             for t in value['teams']if t['club_uid']!=own]
 
-def team(lib,key,candidate):
+def _preset(lib,key,candidate):
     if not re.fullmatch(r'coach:\d{1,7}',candidate):raise ValueError('无效教练预设标识')
     value=ensure(lib,key);ident=int(candidate.split(':')[1]);t=next((t for t in value['teams']if t['team_id']==ident),None)
     if t is None:raise ValueError('教练预设不属于当前存档')
     catalog=assets(lib,lib.folder(key));preset=next(p for p in catalog['templates']if p['index']==t['preset_index'])
     if digest(preset)!=t['preset_sha256']:raise ValueError('原装预设内容已改变，请重新读取')
+    return preset,t
+
+def _preset_team(lib,preset,t):
     result=copy.deepcopy(lib.app.DEFAULT['teams'][1]);lib.apply_plan(result,preset)
-    desktop_static_plans.roster(lib,key,t['club_uid'],result)
     result.update(name=t['name'],tactic_name='教练偏好预设 · '+t['preset_name'])
     neutral=lib.app.unpack_oi(0x80000)
     result['opposition']={'players':[copy.deepcopy(neutral)for _ in result['opposition']['players']],
                           'positions':{p:copy.deepcopy(neutral)for p in result['opposition']['positions']}}
     return result
 
+def preset_tactic(lib,key,candidate):
+    preset,t=_preset(lib,key,candidate)
+    return _preset_team(lib,preset,t)
+
+def team(lib,key,candidate):
+    preset,t=_preset(lib,key,candidate)
+    result=_preset_team(lib,preset,t)
+    desktop_static_plans.roster(lib,key,t['club_uid'],result)
+    return result
+
 def report(lib,key,own):
     import desktop_opponent_scope
     root=lib.folder(key);data=lib.index_data(root);scope=desktop_opponent_scope.identify(data,own)
+    if scope['league'] is None:
+        raise ValueError('当前存档没有唯一可确认的同联赛赛程')
+    if scope['same_league'] - {club['uid'] for club in data['clubs']}:
+        raise ValueError('旧索引缺少本赛季的同联赛球队，请重新导入原 .fm 存档')
     scope['played']&=scope['same_league']
     value=ensure(lib,key);rows=[o for o in opponents(lib,key,own)if o['club_uid']in scope['same_league']];available={r['club_uid']for r in rows}
     names={c['uid']:c.get('short_name')or c['name']for c in data['clubs']}

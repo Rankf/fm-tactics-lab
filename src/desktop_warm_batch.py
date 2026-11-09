@@ -6,6 +6,7 @@ import math
 import os
 from pathlib import Path
 import queue
+import struct
 import subprocess
 import time
 import uuid
@@ -46,6 +47,27 @@ def inspect_saved_run(directory,run):
     return inspect_log(log,rows=merged_rows(receipt,read_rows(log)))
 
 
+def verify_execution_player(player, policy):
+    record = bytes.fromhex(player['record_hex'])
+    if isinstance(policy, int):
+        return record[:33] == bytes([policy])*33
+    ability = policy.get('ability')
+    if ability is None:
+        raw, suitability = record[28:30]
+        if raw > 100 or suitability > 100:
+            return False
+        # The native calculation rounds at each single-precision operation.
+        def f32(value):
+            return struct.unpack('<f', struct.pack('<f', value))[0]
+        factor = f32(suitability*2/100)
+        scaled = f32(f32(raw*4*factor)*100)
+        ability = int(f32(f32(scaled/800)+0.5))
+    overall = (50*policy['understanding'] + 25*policy['buy_in']
+               + 15*policy['opposition'] + 10*ability + 50)//100
+    return (player['ability_contribution'] == ability
+            and record[30:33] == bytes([overall, policy['buy_in'], policy['opposition']]))
+
+
 class DesktopWarmRunner(BatchRunner):
     jobs_per_session=64
     postprocess_workers=2
@@ -80,7 +102,7 @@ class DesktopWarmRunner(BatchRunner):
                 value = expected[side]
                 if (row['side'] != side or row['policy'] != value or row['build_calls'] <= 0
                         or row['sample_calls'] <= 0 or not row['players']
-                        or any(bytes.fromhex(p['record_hex'])[:33] != bytes([value])*33 for p in row['players'])):
+                        or not all(verify_execution_player(p, value) for p in row['players'])):
                     raise ValueError('实验执行力未通过原生采样或回读核对')
                 players = task['scenario']['teams'][side]['players']
                 for player in row['players']:

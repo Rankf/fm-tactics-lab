@@ -40,7 +40,7 @@ Each batch uses a sequence of random seeds. When comparing a saved reference wit
 
 ## Download and launch
 
-Download **FM27-Tactics-Lab-v1108.5.exe** and exit the previous app from its tray menu before launching the update. [v1108.5 release](https://github.com/lqf0624/fm-tactics-lab/releases/tag/v1108.5)
+The current source version is **v1109.2**. Download published desktop builds from [GitHub Releases](https://github.com/lqf0624/fm-tactics-lab/releases). Exit the previous app from its tray menu before launching an update.
 
 Install FM27, open Steam and sign in to the account that owns the game, then launch the EXE. The tool looks for your installation automatically. You can also select the game root containing `fm_Data` and `shared` in the engine settings at the top.
 
@@ -53,6 +53,10 @@ The EXE includes its Python runtime. Players do not need Python or a compiler. T
 3. Select opponents from the same league. Preview their in-possession and out-of-possession boards, then run home and away matches.
 
 Opponent tactics use a built-in preset selected from the head coach's saved style and formation preferences. A team is selectable when both the coach and preferences can be verified. Opponent squads load in batches as needed. You can track or cancel match preparation.
+
+## Save tactics
+
+On **存档战术** (Save Tactics), read a save to list same-league opponents' coach-preference presets, excluding your club. Export all of them into a local folder or add them to the away tactic pool in one click. Saves store no country or league names, so the page groups teams by the current league. Exported opponent files are preset approximations, not the actual match-day tactics.
 
 ## Free Simulation
 
@@ -71,8 +75,9 @@ Open **战术板** (Tactics Board):
 - Drag shirts to swap players while keeping roles, duties and instructions attached to their positions. Moving to an empty position prompts for confirmation if any settings need to change.
 - Adjust mentality, passing, pressing and other team instructions.
 - Configure or import set-piece routines separately in **定位球与职责** (Set Pieces and Responsibilities).
+- **Away tactic pool**: import local FMF tactics on the pool page, or add same-league opponent presets from **存档战术** in one click. With random mode enabled in the bottom bar, each match draws one away tactic by weight.
 
-Imported tactics remain editable.
+Imported tactics remain editable. When the away tactic pool is enabled, every away player's ability attributes can be unified to a configurable interface value (15 by default), while starters receive maximum positional familiarity for the drawn tactic's positions. Draws are derived from the task seed and reproduce within the same experiment.
 
 ### 3. Run matches
 
@@ -125,7 +130,7 @@ Both full squads start with condition and match sharpness at 100%, accumulated f
 
 ### Tactical effectiveness experiment
 
-You can set tactical effectiveness for both teams on a 0–100 scale. The native match simulation uses the supplied values. The option is off by default. Career-save effectiveness values are not yet available.
+Set tactical understanding, player buy-in and opposition information separately for each team on a 0–100 scale. The native engine calculates player ability contributions from each player's CA and suitability for both phase roles. The experiment is off by default. Career-save effectiveness values are not yet available.
 
 ## Save and export
 
@@ -137,8 +142,10 @@ You can set tactical effectiveness for both teams on a 0–100 scale. The native
 
 ## Version and project information
 
-This release is **v1108.5**, for Windows x64. The adapter reference build is `27.0.0+2493426`. Tool code is licensed under MIT; the engine and game resources come from your local installation.
+The current source version is **v1109.2**, for Windows x64. The adapter reference build is `27.0.0+2493426`. Tool code is licensed under MIT; the engine and game resources come from your local installation.
 
 Original engine code and a career match's complete conditions are separate considerations. This tool standardizes starting states; inputs, random states and in-match interventions affect results. Evidence and validation scope are described in [Simulation Fidelity](docs/SIMULATION_FIDELITY.md).
 
 For startup, path or version issues, see [Troubleshooting](docs/TROUBLESHOOTING.md). Developers can read the [build guide](docs/DEVELOPMENT.md), [contribution guide](CONTRIBUTING.md) and [third-party notices](THIRD_PARTY_NOTICES.md).
+
+The interface and system tray follow the Windows display language. Simplified Chinese and English are supported, with English as the fallback. Player names, club names, tactic data and raw logs retain their original text.
