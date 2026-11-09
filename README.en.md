@@ -56,7 +56,7 @@ Opponent tactics use a built-in preset selected from the head coach's saved styl
 
 ## Save tactics
 
-On **存档战术** (Save Tactics), read a save to list same-league opponents' coach-preference presets, excluding your club. Export all of them into a local folder or add them to the away tactic pool in one click. Saves store no country or league names, so the page groups teams by the current league. Exported opponent files are preset approximations, not the actual match-day tactics.
+On **存档战术** (Save Tactics), read a save, then pick any loaded league in the game world to list every opponent head coach's preferences, excluding your club. Each coach produces two original game presets: one for his primary preferred formation and one for his secondary formation (tactic 1 and 2). Export the league's tactics into a local folder or add them to the away tactic pool in one click; pool imports are not deduplicated, so the same tactic may be added more than once. Exported files follow `club-coach-tactic N`. League and country names are read from the local FM27 game database; when unavailable the page falls back to league numbers. Exported files are preset approximations, not the actual match-day tactics.
 
 ## Free Simulation
 
@@ -75,7 +75,7 @@ Open **战术板** (Tactics Board):
 - Drag shirts to swap players while keeping roles, duties and instructions attached to their positions. Moving to an empty position prompts for confirmation if any settings need to change.
 - Adjust mentality, passing, pressing and other team instructions.
 - Configure or import set-piece routines separately in **定位球与职责** (Set Pieces and Responsibilities).
-- **Away tactic pool**: import local FMF tactics on the pool page, or add same-league opponent presets from **存档战术** in one click. With random mode enabled in the bottom bar, each match draws one away tactic by weight.
+- **Away tactic pool**: import local FMF tactics on the pool page, or add the selected league's primary/secondary preference presets from **存档战术** in one click. With random mode enabled in the bottom bar, each match draws one away tactic by weight.
 
 Imported tactics remain editable. When the away tactic pool is enabled, every away player's ability attributes can be unified to a configurable interface value (15 by default), while starters receive maximum positional familiarity for the drawn tactic's positions. Draws are derived from the task seed and reproduce within the same experiment.
 
