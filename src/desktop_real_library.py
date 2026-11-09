@@ -3,7 +3,7 @@ import datetime
 import json
 from pathlib import Path
 
-PROFILE='real-ai-tactic-library-v1'
+PROFILE='real-ai-tactic-library-v2'
 
 
 def read(path):

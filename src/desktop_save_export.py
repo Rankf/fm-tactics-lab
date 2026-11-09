@@ -11,7 +11,6 @@ import fm27_fmf
 
 PROFILE='saved-tactic-export-v2'
 REAL_PROFILE='saved-tactic-real-ai-export-v1'
-REAL_LABEL='真实AI战术'
 MAX_FILES=400
 MAX_PLAN_BYTES=4*1024*1024
 ILLEGAL=re.compile(r'[<>:"/\\|?*]')
@@ -39,10 +38,6 @@ def tactic_file_name(club,coach,index):
     try:number=max(1,int(index))
     except (TypeError,ValueError):number=1
     parts.append(f'第{number}套战术')
-    return '-'.join(part for part in parts if part)
-
-def real_tactic_file_name(club,coach):
-    parts=[safe_component(club,'俱乐部',24),safe_component(coach,'主教练',24),REAL_LABEL]
     return '-'.join(part for part in parts if part)
 
 def _stamp():
@@ -128,7 +123,7 @@ def real_notice(source,file_count):
         f"来源存档：{source.get('source') or '未知'}",
         f"存档日期：{source.get('date') or '未知'}，游戏版本：{source.get('build') or '未知'}",
         '每套战术按该队现任主教练和当前阵容（按能力选取 23 人）由本机原版引擎的 AI 准备流程生成，并从引擎回读完整计划后写出；包含心态、球队指令、双阶段角色与职责、个人指令和阶段映射。',
-        '两个文件分别对应你主场与客场两种对局上下文的引擎输出（预览种子 0）；正式比赛会按实际名单和对局上下文重新生成，不是存档中已结束比赛的录像战术。',
+        '每个对手生成对手主场、对手客场两套，文件名后缀为「主场战术」「客场战术」（预览种子 0）；正式比赛会按实际名单和对局上下文重新生成，不是存档中已结束比赛的录像战术。',
         'manifest.json 记录文件清单、内嵌计划校验值与生成依据。']
     return '\n'.join(lines)+'\n'
 

@@ -485,8 +485,8 @@ class RealGenerationTests(unittest.TestCase):
         self.assertEqual(library['own_club'],1)
         teams={row['club_uid']:row for row in library['teams']}
         self.assertEqual(sorted(teams),[2,3])
-        self.assertEqual([variant['venue']for variant in desktop_real_library.variants(teams[2])],['H','A'])
-        self.assertTrue(all('你主场'in variant['name']or'你客场'in variant['name']for variant in desktop_real_library.variants(teams[2])))
+        self.assertEqual([variant['venue']for variant in desktop_real_library.variants(teams[2])],['A','H'])
+        self.assertTrue(all(('主场战术'in variant['name'])or('客场战术'in variant['name'])for variant in desktop_real_library.variants(teams[2])))
         self.assertEqual(len({variant['plan_sha256']for variant in desktop_real_library.variants(teams[2])}),1)
         again=self.lib.start_real_generation(self.key,'17:200:2026')
         self.assertEqual(again['status'],'complete')
@@ -520,14 +520,14 @@ class RealGenerationTests(unittest.TestCase):
         self.assertEqual(result['source'],'real_ai')
         self.assertEqual(result['profile'],desktop_save_export.REAL_PROFILE)
         self.assertEqual(len(result['files']),4)
-        self.assertTrue(all('你主场'in entry['file']or'你客场'in entry['file']for entry in result['files']))
+        self.assertTrue(all(('主场战术'in entry['file'])or('客场战术'in entry['file'])for entry in result['files']))
         self.assertRegex(Path(result['directory']).name,r'^FM27真实AI战术-')
         for entry in result['files']:
             self.assertEqual(fm27_fmf.tactics_plan((Path(result['directory'])/entry['file']).read_bytes()),self.plan)
             self.assertEqual(entry['report']['source'],'original_engine_generation')
             self.assertIn(entry['report']['venue'],('H','A'))
         notice=(Path(result['directory'])/'导出说明.txt').read_text(encoding='utf8')
-        self.assertIn('你主场与客场',notice)
+        self.assertIn('对手主场、对手客场',notice)
 
     def test_pool_import_uses_generated_library(self):
         started=self.patches()
@@ -540,8 +540,8 @@ class RealGenerationTests(unittest.TestCase):
         self.assertEqual(value['source'],'real_ai')
         self.assertEqual(len(value['imported']),4)
         self.assertEqual(len(value['scenario']['away_tactic_pool']['entries']),4)
-        self.assertEqual([row['venue']for row in value['imported']],['H','A','H','A'])
-        self.assertTrue(all(row['label']in('你主场','你客场')for row in value['imported']))
+        self.assertEqual([row['venue']for row in value['imported']],['A','H','A','H'])
+        self.assertTrue(all(('主场战术'in row['label'])or('客场战术'in row['label'])for row in value['imported']))
 
     def test_validation_rejects_own_team_foreign_league_and_concurrency(self):
         with self.assertRaises(ValueError):self.lib.generate_real_team(self.key,'17:200:2026',1)
@@ -566,7 +566,7 @@ class RealGenerationTests(unittest.TestCase):
         self.assertEqual(value['real']['variant_count'],4)
         rows={row['club_uid']:row for row in value['teams']}
         self.assertTrue(rows[2]['real']);self.assertTrue(all(variant['source']=='real_ai'for variant in rows[2]['variants']))
-        self.assertEqual([variant['label']for variant in rows[2]['variants']],['你主场','你客场'])
+        self.assertEqual([variant['label']for variant in rows[2]['variants']],['队2主场战术','队2客场战术'])
 
     def coach_row(self,club_uid):
         return {'club_uid':club_uid,'name':f'队{club_uid}','coach_name':f'教练{club_uid}','available':True,

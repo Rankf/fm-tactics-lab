@@ -14,7 +14,7 @@ PROFILE='source-direct-duel-v1'
 FRAGMENTS='staff_fragments'
 MANAGER_JOB=16
 MAX_ROSTER=23
-VARIANT_LABELS={'H':'你主场','A':'你客场'}
+VARIANT_LABELS={'A':'主场','H':'客场'}
 PREP_VERSION=3
 _VERIFIED={}
 
@@ -242,14 +242,15 @@ def preview(lib,key,own_club,opponent_club,venue='H',seed=0,prepared=None):
         'opponent_roster':[player['unique_id']for player in opponent_players]}
 
 
-def variant_label(venue):
-    return VARIANT_LABELS.get(venue)or venue
+def variant_label(venue,club=None):
+    word=VARIANT_LABELS.get(venue)or venue
+    return f'{club}{word}战术' if club else f'{word}战术'
 
 
 def variant_name(lib,club,coach,venue):
     import desktop_save_export
     parts=[desktop_save_export.safe_component(club,'俱乐部',24),
-           desktop_save_export.safe_component(coach,'主教练',24),'真实AI战术',variant_label(venue)]
+           desktop_save_export.safe_component(coach,'主教练',24),f'{VARIANT_LABELS[venue]}战术']
     return '-'.join(part for part in parts if part)
 
 
@@ -273,10 +274,10 @@ def team_from_plan(lib,key,plan,roster,club_uid,tactic_name):
 def record(lib,key,result,prepared=None,created=None):
     """One stored variant: engine plan, its roster and generation receipt."""
     import datetime
-    opponent=result['team']
-    return {'index':1 if result['venue']=='H' else 2,'venue':result['venue'],
-        'label':variant_label(result['venue']),
-        'name':variant_name(lib,opponent.get('name'),result.get('opponent_coach')or'',result['venue']),
+    opponent=result['team'];venue=result['venue'];club=opponent.get('name')
+    return {'index':1 if venue=='A' else 2,'venue':venue,
+        'label':variant_label(venue,club),
+        'name':variant_name(lib,club,result.get('opponent_coach')or'',venue),
         'tactic_name':opponent.get('tactic_name'),'plan':result['native_plan'],
         'roster':result['opponent_roster'],'club_uid':result['opponent_club'],
         'club':opponent.get('name'),'coach':result.get('opponent_coach')or'',

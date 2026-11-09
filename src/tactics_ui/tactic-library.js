@@ -79,9 +79,9 @@ function libraryReportBody(report){
  const table=teams.length?`<div class="table-scroll"><table class="library-table"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`:`<p class="tiny muted">没有找到对手球队</p>`;
  const details=failures.length?`<details><summary>失败 ${failures.length} 项</summary>${failures.map(f=>`<p class="tiny">${esc(f.name||'')}：${esc(f.error||'读取失败')}</p>`).join('')}</details>`:'';
  const summary=report.real&&!reading?`<div class="notice">真实AI战术已就绪：${report.real.count} 队 / ${report.real.variant_count} 套 · 用时 ${Math.round(report.real.elapsed_seconds||0)} 秒</div>`:'';
- const realFailures=(report.real?.failures||[]).length?`<details><summary>真实战术失败 ${report.real.failures.length} 项</summary>${report.real.failures.map(f=>`<p class="tiny">${esc(f.club||('#'+f.club_uid))} · ${esc(f.venue==='H'?'你主场':'你客场')}：${esc(f.error||'生成失败')}</p>`).join('')}</details>`:'';
+ const realFailures=(report.real?.failures||[]).length?`<details><summary>真实战术失败 ${report.real.failures.length} 项</summary>${report.real.failures.map(f=>`<p class="tiny">${esc(f.club||('#'+f.club_uid))} · ${esc(f.venue==='A'?'主场':'客场')}：${esc(f.error||'生成失败')}</p>`).join('')}</details>`:'';
  const bar=own&&reading?`<div class="real-progress" role="status"><div class="real-progress-track"><div class="real-progress-bar" style="width:${pct}%"></div></div><p class="tiny muted">${esc(progress.stage||'正在生成真实AI战术')}</p></div>`:'';
- const hint=own?'<p class="tiny muted">真实战术对每个对手生成你主场、你客场两套；由本机原版引擎准备，首次较慢。</p>':'';
+ const hint=own?'<p class="tiny muted">真实战术对每个对手生成对手主场、对手客场两套；由本机原版引擎准备，首次较慢。</p>':'';
  const realButton=own?`<button id="library-real-all" class="button" ${reading?'disabled':''}>${report.real?'重新生成全部':'生成全部真实战术'}</button>`:'';
  const controls=`<div class="save-team-controls"><label>导出目录<input id="library-directory" value="${esc(libraryDirectory())}" placeholder="选择本机文件夹"></label><button id="library-folder" class="button">选择目录…</button><button id="library-export" class="button" ${reading?'disabled':''}>导出全部战术</button><button id="library-pool" class="button primary" ${reading?'disabled':''}>导入客队战术池</button>${realButton}</div>`;
  return `${summary}${realFailures}${bar}${table}${details}${hint}${controls}${libraryExportResult()}`;

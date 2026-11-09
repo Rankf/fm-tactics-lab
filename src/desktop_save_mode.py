@@ -451,7 +451,7 @@ class SaveLibrary:
                     'variants':variants,'error':None,'real':True})
         return sorted(by_index.values(),key=lambda team:(team.get('name')or'',team['club_uid']))
 
-    REAL_VENUES=('H','A')
+    REAL_VENUES=('A','H')
 
     def real_library(self,key,league=None):
         try:return desktop_real_library.load(self,key,league)
@@ -700,7 +700,7 @@ class SaveLibrary:
                     report=dict(exported.get('report')or {})
                     report.update({'source':'original_engine_generation','venue':variant['venue'],
                         'venue_label':variant.get('label'),'preview_seed':0,
-                        'context':'你在'+('主场'if variant['venue']=='H'else'客场')+'时的对手准备，预览种子 0；正式比赛会按实际名单和上下文重新生成',
+                        'context':'对手'+('主场'if variant['venue']=='A'else'客场')+'战术，预览种子 0；正式比赛会按实际名单和上下文重新生成',
                         'plan_sha256':variant.get('plan_sha256'),'payload_sha256':variant.get('payload_sha256'),
                         'generated_at':variant.get('generated_at'),'roster':variant.get('roster')})
                     rows.append({'club_uid':team['club_uid'],'club':team.get('club')or str(team['club_uid']),
