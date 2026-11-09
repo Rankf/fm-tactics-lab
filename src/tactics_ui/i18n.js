@@ -14,14 +14,14 @@ window.FM27I18n = (() => {
   seen.add(value);
   if (Array.isArray(value)) { for (const row of value) remember(row); return; }
   for (const [key, item] of Object.entries(value)) {
-   if (['name','tactic_name','club_name','filename','source','path','directory'].includes(key) && typeof item === 'string' && /[\u3400-\u9fff]/.test(item) && !/^(主队|客队)(球员 \d+)?$/.test(item)) names.add(item);
+   if (['name','tactic_name','club_name','coach_name','nation','filename','source','path','directory'].includes(key) && typeof item === 'string' && /[\u3400-\u9fff]/.test(item) && !/^(主队|客队)(球员 \d+)?$/.test(item)) names.add(item);
    else if (item && typeof item === 'object' && !['attributes','phases','instructions','native_source_plan','role_eligibility_context','pi_policies'].includes(key)) remember(item);
   }
  }
  function refreshNames() {
   names.clear();seen=new WeakSet();
   // Each optional page is loaded after this module, so guard lexical bindings.
-  for (const read of [()=>state,()=>reference,()=>saveInfo,()=>saveRoster,()=>saveOpponents,()=>saveLoaded,()=>librarySave,()=>libraryReport,()=>selectedJob?.runs?.[selectedJob?.detailIndex || 0]]) {
+  for (const read of [()=>state,()=>reference,()=>saveInfo,()=>saveRoster,()=>saveOpponents,()=>saveLoaded,()=>librarySave,()=>libraryLeagues,()=>libraryReport,()=>selectedJob?.runs?.[selectedJob?.detailIndex || 0]]) {
    try { remember(read()); } catch (_) { /* Page is not initialized yet. */ }
   }
  }
