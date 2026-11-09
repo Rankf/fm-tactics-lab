@@ -9,7 +9,7 @@ import shutil
 import time
 import fm27_fmf
 
-PROFILE='saved-tactic-export-v1'
+PROFILE='saved-tactic-export-v2'
 MAX_FILES=400
 MAX_PLAN_BYTES=4*1024*1024
 ILLEGAL=re.compile(r'[<>:"/\\|?*]')
@@ -31,6 +31,13 @@ def safe_component(value,fallback,limit=60):
         text=('_'+text)[:limit].rstrip(' .')
         if not text:return '战术'
     return text
+
+def tactic_file_name(club,coach,index):
+    parts=[safe_component(club,'俱乐部',24),safe_component(coach,'主教练',24)]
+    try:number=max(1,int(index))
+    except (TypeError,ValueError):number=1
+    parts.append(f'第{number}套战术')
+    return '-'.join(part for part in parts if part)
 
 def _stamp():
     return time.strftime('%Y%m%d-%H%M%S')
@@ -90,19 +97,23 @@ def _rows(items):
         except ValueError as error:raise ValueError('战术文件校验失败：'+str(error))
         if not plan:raise ValueError('战术文件缺少内嵌计划')
         if len(plan)>MAX_PLAN_BYTES:raise ValueError('单套战术计划超过 4 MB，无法导出')
-        club=item.get('club');name=item.get('tactic_name');report=item.get('report')
+        club=item.get('club');coach=item.get('coach');index=item.get('index');name=item.get('name')
+        tactic_name=item.get('tactic_name');report=item.get('report')
+        if not isinstance(name,str)or not name:raise ValueError('战术文件名称无效')
         result.append({'club_uid':club_uid,'club':club if isinstance(club,str)else str(club if club is not None else club_uid),
-            'target':target,'tactic_name':name if isinstance(name,str)else '',
+            'coach':coach if isinstance(coach,str)else '', 'index':index if type(index)is int else None,
+            'name':name,'target':target,'tactic_name':tactic_name if isinstance(tactic_name,str)else '',
+            'preset_name':item.get('preset_name')if isinstance(item.get('preset_name'),str)else '',
             'payload':payload,'plan':plan,'report':report if isinstance(report,dict)else {}})
     return result
 
-def _notice(source,folders,files):
+def _notice(source,file_count):
     lines=['FM27 存档战术导出','',
-        f'本目录由 FM Tactics Lab 从 FM27 生涯存档导出，共 {len(folders)} 支球队、{len(files)} 套战术。',
+        f'本目录由 FM Tactics Lab 从 FM27 生涯存档导出，共 {file_count} 套战术。',
         f"来源存档：{source.get('source') or '未知'}",
         f"存档日期：{source.get('date') or '未知'}，游戏版本：{source.get('build') or '未知'}",
-        '己方战术为存档中的存储战术，同联赛对手战术为教练偏好原装预设。',
-        '每套 .fmf 可在工具中重新导入；manifest.json 记录文件清单、内嵌计划校验值与原版回读结果。']
+        '文件名格式为 俱乐部-教练-第x套战术：第1套按主教练主偏好阵型匹配，第2套按次偏好阵型匹配，都是游戏原装预设的近似，不是当天实战战术。',
+        '每套 .fmf 可在工具中重新导入；manifest.json 记录文件清单、内嵌计划校验值与导出依据。']
     return '\n'.join(lines)+'\n'
 
 def write(directory,source,items):
@@ -115,29 +126,23 @@ def write(directory,source,items):
     rows=_rows(items);source=_source(source)
     root=_directory(base)
     try:
-        folders={}
-        for row in rows:folders.setdefault(row['club_uid'],row['club'])
-        used_clubs=set();folder_names={uid:_unique(club,f'球队{uid}',used_clubs)for uid,club in folders.items()}
-        used_files={};files=[]
+        used=set();files=[]
         for row in rows:
-            club_dir=root/folder_names[row['club_uid']]
-            if not _inside(root,club_dir)or club_dir.is_symlink():raise ValueError('导出路径越界，已停止')
-            club_dir.mkdir(exist_ok=True)
-            used=used_files.setdefault(row['club_uid'],set())
-            name=_unique(row['tactic_name'],f"战术{row['target'].rsplit(':',1)[-1]}",used)
-            target=club_dir/(name+'.fmf')
+            stem=_unique(row['name'],f"战术{row['index']or 1}",used)
+            target=root/(stem+'.fmf')
             if not _inside(root,target):raise ValueError('导出路径越界，已停止')
             _atomic(target,row['payload'])
             files.append({'file':target.relative_to(root).as_posix(),'club_uid':row['club_uid'],
-                'club':row['club'],'target':row['target'],'tactic_name':row['tactic_name'],
+                'club':row['club'],'coach':row['coach'],'index':row['index'],'name':stem,
+                'target':row['target'],'tactic_name':row['tactic_name'],'preset_name':row['preset_name'],
                 'sha256':hashlib.sha256(row['payload']).hexdigest(),'size':len(row['payload']),
                 'plan_sha256':hashlib.sha256(row['plan']).hexdigest(),'plan_size':len(row['plan']),
                 'report':row['report']})
         manifest={'profile':PROFILE,'created':datetime.now().astimezone().isoformat(timespec='seconds'),
             'source':source,'files':files,
-            'notice':f'本目录包含 {len(folder_names)} 支球队、{len(files)} 套 FM27 战术文件，内嵌计划均已校验。'}
+            'notice':f'本目录包含 {len(files)} 套 FM27 战术文件，内嵌计划均已校验。'}
         _atomic(root/'manifest.json',json.dumps(manifest,ensure_ascii=False,indent=2).encode('utf8'))
-        _atomic(root/'导出说明.txt',_notice(source,folder_names,files).encode('utf8'))
+        _atomic(root/'导出说明.txt',_notice(source,len(files)).encode('utf8'))
     except Exception:
         shutil.rmtree(root,ignore_errors=True)
         raise

@@ -778,6 +778,10 @@ class Handler(BaseHTTPRequestHandler):
             query=parse_qs(urlparse(self.path).query)
             try: return self.send(SAVE_LIBRARY.status(query.get('id',[None])[0]))
             except (ValueError,OSError) as error: return self.send({'error':str(error)},400)
+        if path=='/api/save/leagues':
+            query=parse_qs(urlparse(self.path).query)
+            try: return self.send(SAVE_LIBRARY.league_catalog(query.get('id',[None])[0]))
+            except (ValueError,OSError) as error: return self.send({'error':str(error)},400)
         if path=='/api/jobs':
             with LOCK:return self.send([{k:v for k,v in j.items()if not k.startswith('_')and(k!='runs'or parse_qs(urlparse(self.path).query).get('brief')!=['1'])}for j in sorted(JOBS.values(),key=lambda j:j.get('created',0))])
         parts=path.strip('/').split('/')
@@ -818,7 +822,7 @@ class Handler(BaseHTTPRequestHandler):
         if origin and origin!=f'http://{self.headers.get("Host")}':return self.send({'error':'拒绝跨站调用'},403)
         try:
             length=int(self.headers.get('Content-Length',0))
-            if not 0<length<=(8000000 if urlparse(self.path).path in ('/api/import-fmf','/api/pool/import-fmf')else 1500000):raise ValueError('请求大小无效')
+            if not 0<length<=(8000000 if urlparse(self.path).path in ('/api/import-fmf','/api/pool/import-fmf','/api/save/league-pool')else 1500000):raise ValueError('请求大小无效')
             data=json.loads(self.rfile.read(length));path=urlparse(self.path).path
             if path=='/api/jobs/rename':
                 with LOCK:
@@ -847,14 +851,16 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith('/api/save/'):
                 if path=='/api/save/pick': return self.send({'path':desktop_save_mode.choose_save_file()})
                 if path=='/api/save/pick-folder': return self.send({'path':desktop_save_mode.choose_folder()})
+                if path=='/api/save/leagues':
+                    return self.send(SAVE_LIBRARY.league_catalog(data['id']))
                 if path=='/api/save/league-library':
-                    return self.send(SAVE_LIBRARY.league_library(data['id'],data['club_uid']))
+                    return self.send(SAVE_LIBRARY.league_library(data['id'],data['league']))
                 if path=='/api/save/league-export':
                     require_league_idle('导出存档战术')
-                    return self.send(SAVE_LIBRARY.export_league_tactics(data['id'],data['club_uid'],data['directory']))
+                    return self.send(SAVE_LIBRARY.export_league_tactics(data['id'],data['league'],data['directory']))
                 if path=='/api/save/league-pool':
                     require_league_idle('导入客队战术池')
-                    return self.send(SAVE_LIBRARY.import_league_tactics_pool(data['id'],data['club_uid'],data['scenario']))
+                    return self.send(SAVE_LIBRARY.import_league_tactics_pool(data['id'],data['league'],data['scenario']))
                 if path=='/api/save/import': return self.send(SAVE_LIBRARY.start(data['path']),202)
                 if path=='/api/save/club': return self.send(SAVE_LIBRARY.club(data['id'],data['club_uid']))
                 if path=='/api/save/load':

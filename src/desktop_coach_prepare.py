@@ -6,7 +6,7 @@ sys.path.insert(0,str(Path(__file__).with_name('vendor')))
 PROFILE = 'static-first-team-coaches-v3'
 FRAGMENT_DIRECTORY = 'first_team_staff_fragments'
 
-def prepare(source,folder,index_path):
+def prepare(source,folder,index_path,selection_path=None):
     import desktop_save_compat;desktop_save_compat.install()
     import fmsave
     import fmsave.readers.staff as reader
@@ -22,12 +22,20 @@ def prepare(source,folder,index_path):
     before=source.stat()
     with source.open('rb')as stream:digest=hashlib.file_digest(stream,'sha256').hexdigest()
     if digest!=index['source_sha256']:raise ValueError('存档已更新，请重新读取存档')
-    own=index['managed'][0]['club_uid'];scope=identify(index,own)
-    if scope['league']is None:raise ValueError('当前存档同联赛范围尚未识别')
-    wanted=set(scope['league']['club_uids']);clubs=[c for c in index['clubs']if c['uid']in wanted]
+    if selection_path is not None:
+        selection=json.loads(Path(selection_path).read_text(encoding='utf8'))
+        clubs=[{'uid':row['uid'],'name':row['name'],'short_name':row['short_name'],'nation_id':row['nation_id'],
+                'teams':[{'team_id':row['team_id'],'slot':0}]}for row in selection['clubs']]
+        wanted={c['uid']for c in clubs}
+        if not clubs or any(type(c['uid'])is not int or type(c['teams'][0]['team_id'])is not int for c in clubs):
+            raise ValueError('联赛球队选择无效')
+    else:
+        own=index['managed'][0]['club_uid'];scope=identify(index,own)
+        if scope['league']is None:raise ValueError('当前存档同联赛范围尚未识别')
+        wanted=set(scope['league']['club_uids']);clubs=[c for c in index['clubs']if c['uid']in wanted]
     with fmsave.open(source)as save:
         with save._context.section('game_db')as db:
-            progress('读取同联赛球队与现任主教练引用')
+            progress('读取所选联赛球队与现任主教练引用')
             first_team_ids={t['team_id']for c in clubs for t in c['teams']if t['slot']==0}
             table=from_save(save,db,first_team_ids)
             records=save._context.player_records();layouts=reader.find_staff_layouts(save.info.section_schemas,save.info.build)
@@ -39,7 +47,7 @@ def prepare(source,folder,index_path):
                 club=next(c for c in clubs if any(t['team_id']==team['team_id']for t in c['teams']))
                 selector=team['coach_person_reference']
                 if club['uid']in managed or selector==0xffffffff:continue
-                progress('定向读取同联赛教练 '+str(len(rows)+1)+' / '+str(len(table['records'])-len(managed)))
+                progress('定向读取联赛教练 '+str(len(rows)+1)+' / '+str(len(table['records'])-len(managed)))
                 header=reader.locate_listed_header(db,selector-1,records,layout)
                 if not isinstance(header,int):
                     failures.append({'selector':selector,'error':'教练对象头未唯一定位'});continue

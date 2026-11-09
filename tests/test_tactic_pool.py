@@ -61,7 +61,8 @@ class DefaultsTests(unittest.TestCase):
         self.assertEqual(value,{'enabled':False,'entries':[],
             'uniform':{'enabled':True,'attribute_value':pools.DEFAULT_ATTRIBUTE_VALUE}})
         self.assertEqual(pools.DEFAULT_ATTRIBUTE_VALUE,15)
-        self.assertEqual(pools.MAX_ENTRIES,64)
+        self.assertEqual(pools.MAX_ENTRIES,128)
+        self.assertEqual(pools.MAX_NAME,80)
         self.assertEqual(pools.PROFILE,'away-tactic-pool-v1')
 
     def test_normalize_fills_profile_for_legacy_absent_field(self):
@@ -87,7 +88,7 @@ class NormalizeTests(unittest.TestCase):
 
     def test_rejects_invalid_entry_fields(self):
         cases=[{'entries':'x'},{'entries':[{}]},{'entries':[{'name':'','weight':1,'tactic':tactic()}]},
-            {'entries':[{'name':'a'*61,'weight':1,'tactic':tactic()}]},
+            {'entries':[{'name':'a'*81,'weight':1,'tactic':tactic()}]},
             {'entries':[{'name':'a\nb','weight':1,'tactic':tactic()}]},
             {'entries':[{'name':'a','weight':0,'tactic':tactic()}]},
             {'entries':[{'name':'a','weight':1001,'tactic':tactic()}]},
