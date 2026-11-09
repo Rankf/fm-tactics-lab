@@ -295,6 +295,41 @@ class ApplyTests(unittest.TestCase):
             self.assertEqual(attributes[:15],expected)
             self.assertEqual(attributes[15:],[75]*54)
 
+    def test_apply_guarantees_familiarity_for_every_catalog_position(self):
+        positions=list(pools.POSITION_ATTRIBUTE_INDEX)
+        for start in range(0,len(positions),11):
+            batch=(positions[start:start+11]+positions)[:11]
+            target=team('客队')
+            source=entry('位置')
+            source['tactic']['phases']=[[cell(position)for position in batch]for _ in range(2)]
+            pools.apply(target,source,{'enabled':True,'attribute_value':15})
+            for slot in range(11):
+                player=target['players'][target['lineup'][slot]]
+                self.assertEqual(player['attributes'][:15],expected_positions(batch,slot))
+                self.assertEqual(player['attributes'][15:],[75]*54)
+        self.assertGreaterEqual(len(pools.POSITION_ATTRIBUTE_INDEX),24)
+
+    def test_apply_rejects_unknown_tactic_position(self):
+        target=team('客队')
+        source=entry('未知位置')
+        source['tactic']['phases'][0][0]['position']='XX'
+        with self.assertRaises(ValueError)as caught:
+            pools.apply(target,source,{'enabled':True,'attribute_value':15})
+        self.assertIn('未知位置',str(caught.exception))
+
+    def test_verify_detects_tampered_familiarity_or_attributes(self):
+        target=team('客队')
+        pools.apply(target,entry('统一'),{'enabled':True,'attribute_value':15})
+        self.assertTrue(pools.verify(target,15))
+        target['players'][0]['attributes'][pools.POSITION_ATTRIBUTE_INDEX['GK']]=1
+        with self.assertRaises(ValueError):
+            pools.verify(target,15)
+        target=team('客队')
+        pools.apply(target,entry('统一'),{'enabled':True,'attribute_value':15})
+        target['players'][0]['attributes'][pools.POSITION_ATTRIBUTES]=70
+        with self.assertRaises(ValueError):
+            pools.verify(target,15)
+
     def test_apply_rejects_incomplete_player_attributes(self):
         target=team('客队');target['players'][0]['attributes']=[10]*68
         with self.assertRaises(ValueError):

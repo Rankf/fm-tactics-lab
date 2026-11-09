@@ -14,6 +14,9 @@ PROFILE='source-direct-duel-v1'
 FRAGMENTS='staff_fragments'
 MANAGER_JOB=16
 MAX_ROSTER=23
+VARIANT_LABELS={'H':'你主场','A':'你客场'}
+PREP_VERSION=3
+_VERIFIED={}
 
 
 def read(path):
@@ -45,12 +48,22 @@ def ensure(lib,key):
     """Prepared league coaches and players, cached by save digest."""
     root=lib.folder(key);data=lib.index_data(root);out=folder(lib,key);out.mkdir(parents=True,exist_ok=True)
     source=_source(lib,key)
-    with Path(source).open('rb')as stream:
-        if hashlib.file_digest(stream,'sha256').hexdigest()!=data['source_sha256']:
-            raise ValueError('来源存档已更新，请重新读取存档后再生成真实AI战术')
+    stat=Path(source).stat();stamp=(str(source),stat.st_size,stat.st_mtime_ns,data['source_sha256'])
+    if stamp not in _VERIFIED:
+        with Path(source).open('rb')as stream:
+            if hashlib.file_digest(stream,'sha256').hexdigest()!=data['source_sha256']:
+                raise ValueError('来源存档已更新，请重新读取存档后再生成真实AI战术')
+        if len(_VERIFIED)>8:_VERIFIED.clear()
+        _VERIFIED[stamp]=True
+    marker=out/'prepare.json'
+    prepared_stamp={}
+    if marker.exists():
+        try:prepared_stamp=read(marker)
+        except (OSError,ValueError):prepared_stamp={}
+    stale=prepared_stamp.get('version')!=PREP_VERSION or prepared_stamp.get('source_sha256')!=data['source_sha256']
     inputs=out/'generation_inputs.json'
     usable=False
-    if inputs.exists():
+    if inputs.exists()and not stale:
         try:usable=read(inputs).get('source_sha256')==data['source_sha256']
         except (OSError,ValueError):usable=False
     if not usable:
@@ -58,12 +71,13 @@ def ensure(lib,key):
         if result.returncode:raise ValueError('真实AI战术源数据准备失败，见 real_generation/inputs.log')
     fragments=out/'staff_fragments.json'
     usable=False
-    if fragments.exists():
+    if fragments.exists()and not stale:
         try:usable=read(fragments).get('source_sha256')==data['source_sha256']
         except (OSError,ValueError):usable=False
     if not usable:
         result=_run('desktop_real_generation_prepare.py',(source,out),out/'prepare.log',300)
         if result.returncode:raise ValueError('真实AI战术教练档案准备失败，见 real_generation/prepare.log')
+        lib.write(marker,{'version':PREP_VERSION,'source_sha256':data['source_sha256']})
     expected=read(fragments)
     if not expected.get('human_ready'):
         raise ValueError('你的主教练档案无法从存档定位：'+str(expected.get('human_error')or'未知原因'))
@@ -133,6 +147,9 @@ def _side_record(inputs,club,coach,native,human,players):
     profile=bytes.fromhex(native['profile_hex'])
     extra=bytes.fromhex(native['native_d4_to_f4_hex'])
     codes=extra[11:19]
+    ordered=bytes(codes[index]for index in (0,1,3,2,4,5,7,6))
+    if len(profile)!=52 or any(value>100 for value in profile) or any(value>64 for value in ordered):
+        raise ValueError('该队主教练档案的参数超出原版生成范围，暂不支持真实AI战术')
     personality=coach['personality']
     traits=native['generation_trait_pairs']
     influence=75 if human else 75+struct.unpack_from('<H',extra,6)[0]//10+max(1,min(20,(profile[51]+2)//5))
@@ -140,7 +157,7 @@ def _side_record(inputs,club,coach,native,human,players):
     record=bytearray(struct.pack('<4I',int(club['unique_id']),int(coach['unique_id']),
         int(club.get('reputation')or 0),len(uids)))
     record+=profile
-    record+=bytes(codes[index]for index in (0,1,3,2,4,5,7,6))
+    record+=ordered
     record+=bytes(int(personality[key])for key in ('professionalism','loyalty','sportsmanship','temperament','pressure','ambition','adaptability'))
     record+=bytes([int(coach['age'])])
     record+=struct.pack('<23I',*(uids+[0]*(MAX_ROSTER-len(uids))))
@@ -152,10 +169,11 @@ def _side_record(inputs,club,coach,native,human,players):
     return record
 
 
-def preview(lib,key,own_club,opponent_club):
-    prepared=ensure(lib,key)
+def _selection(lib,key,own_club,opponent_club,venue,prepared=None):
+    prepared=prepared or ensure(lib,key)
     inputs=prepared['inputs'];staff=prepared['staff']
     own_club=int(own_club);opponent_club=int(opponent_club)
+    if venue not in ('H','A'):raise ValueError('真实AI战术只支持主/客场两种上下文')
     clubs={club['uid']:club for club in inputs.get('clubs')or []}
     if own_club not in clubs or opponent_club not in clubs:
         raise ValueError('所选球队不在你当前执教的联赛，无法读取当前教练与名单')
@@ -168,29 +186,100 @@ def preview(lib,key,own_club,opponent_club):
     if own_native is None or opponent_native is None:raise ValueError('双方主教练档案尚未通过原版读回')
     own_players=roster(inputs,own_club)
     opponent_players=roster(inputs,opponent_club)
+    return {'inputs':inputs,'clubs':clubs,'own_coach':own_coach,'opponent_coach':opponent_coach,
+        'own_native':own_native,'opponent_native':opponent_native,
+        'own_players':own_players,'opponent_players':opponent_players}
+
+
+def preview(lib,key,own_club,opponent_club,venue='H',seed=0,prepared=None):
+    context=_selection(lib,key,own_club,opponent_club,venue,prepared)
+    inputs=context['inputs'];clubs=context['clubs']
+    own=context['own_coach'];opponent=context['opponent_coach']
+    home = venue=='H'
+    first,second = (own,opponent) if home else (opponent,own)
+    first_players,second_players = ((context['own_players'],context['opponent_players']) if home
+        else (context['opponent_players'],context['own_players']))
+    first_native,second_native = ((context['own_native'],context['opponent_native']) if home
+        else (context['opponent_native'],context['own_native']))
+    first_club = clubs[int(own_club)] if home else clubs[int(opponent_club)]
+    second_club = clubs[int(opponent_club)] if home else clubs[int(own_club)]
+    ai_side = 1 if home else 0
     payload=bytearray(b'FM27DUL1')
-    payload+=_side_record(inputs,clubs[own_club],own_coach,own_native,True,own_players)
-    payload+=_side_record(inputs,clubs[opponent_club],opponent_coach,opponent_native,False,opponent_players)
-    own_team=_team(lib,0,clubs[own_club].get('short_name')or clubs[own_club].get('name')or'你的球队',own_players,'我的球队 · 真实AI战术预览')
-    opponent_team=_team(lib,1,clubs[opponent_club].get('short_name')or clubs[opponent_club].get('name')or'对手',opponent_players,'本场原生AI生成')
-    scenario=copy.deepcopy(lib.app.DEFAULT);scenario['teams']=[own_team,opponent_team]
+    payload+=_side_record(inputs,first_club,first,first_native,home,first_players)
+    payload+=_side_record(inputs,second_club,second,second_native,not home,second_players)
+    first_team=_team(lib,0,first_club.get('short_name')or first_club.get('name')or'主队',first_players,'真实AI战术预览 · 主队')
+    second_team=_team(lib,1,second_club.get('short_name')or second_club.get('name')or'客队',second_players,'本场原生AI生成')
+    scenario=copy.deepcopy(lib.app.DEFAULT);scenario['teams']=[first_team,second_team]
     scenario['native_generation']={'profile':desktop_generation_protocol.PROFILE,'payload_hex':payload.hex()}
     config=lib.app.encode_scenario(scenario,absolute=True)
     digest=hashlib.sha256(config).hexdigest()
     root=folder(lib,key);cfg=root/f'preview_{digest[:16]}.bin';cfg.write_bytes(config)
     name='real_generation_preview_'+digest[:16]
-    rows=lib.native(['--fixture',str(lib.app.ROOT/'fm27_native/fixtures/match.pkm'),
-        '--scenario-file',str(cfg),'--seed','0','--inspect-fixture'],lib.folder(key),name)
-    plans=[row for row in rows if row.get('event')=='source_generation_readback']
-    if len(plans)!=2:raise ValueError('原版引擎未返回完整的双方战术回读，见 '+name+'.jsonl')
-    plan=next(row for row in plans if row.get('side')==1)
+    cache=root/f'plan_{digest[:16]}_{seed}.json'
+    if cache.exists():
+        try:plan=read(cache)
+        except (OSError,ValueError):plan=None
+    else:plan=None
+    if plan is None:
+        rows=lib.native(['--fixture',str(lib.app.ROOT/'fm27_native/fixtures/match.pkm'),
+            '--scenario-file',str(cfg),'--seed',str(seed),'--inspect-fixture'],lib.folder(key),name)
+        plans=[row for row in rows if row.get('event')=='source_generation_readback']
+        if len(plans)!=2:raise ValueError('原版引擎未返回完整的双方战术回读，见 '+name+'.jsonl')
+        plan=next(row for row in plans if row.get('side')==ai_side)
+        lib.write(cache,plan)
+    opponent_players=context['opponent_players']
+    opponent_club_row=clubs[int(opponent_club)]
+    opponent_team=_team(lib,1,opponent_club_row.get('short_name')or opponent_club_row.get('name')or'对手',opponent_players,'本场原生AI生成')
     lib.apply_plan(opponent_team,plan)
     indices={player.get('source_uid'):index for index,player in enumerate(opponent_team['players'][:opponent_team['roster_size']])}
     try:opponent_team['lineup']=[indices[uid]for uid in plan['lineup_source_uids']]
     except KeyError:raise ValueError('原版战术首发与名单不一致')
-    return {'team':opponent_team,'native_plan':plan,
+    return {'team':opponent_team,'native_plan':plan,'venue':venue,'seed':seed,
         'payload_sha256':hashlib.sha256(payload).hexdigest(),'config_sha256':digest,
-        'own_club':own_club,'opponent_club':opponent_club,
-        'own_coach':own_coach.get('name'),'opponent_coach':opponent_coach.get('name'),
-        'own_roster':[player['unique_id']for player in own_players],
+        'own_club':int(own_club),'opponent_club':int(opponent_club),
+        'own_coach':own.get('name'),'opponent_coach':opponent.get('name'),
+        'own_roster':[player['unique_id']for player in context['own_players']],
         'opponent_roster':[player['unique_id']for player in opponent_players]}
+
+
+def variant_label(venue):
+    return VARIANT_LABELS.get(venue)or venue
+
+
+def variant_name(lib,club,coach,venue):
+    import desktop_save_export
+    parts=[desktop_save_export.safe_component(club,'俱乐部',24),
+           desktop_save_export.safe_component(coach,'主教练',24),'真实AI战术',variant_label(venue)]
+    return '-'.join(part for part in parts if part)
+
+
+def team_from_plan(lib,key,plan,roster,club_uid,tactic_name):
+    """Rebuild the generated opponent team from a stored plan and roster."""
+    prepared=ensure(lib,key)
+    inputs=prepared['inputs']
+    players={player['unique_id']:player for player in inputs.get('players')or []}
+    try:chosen=[players[uid]for uid in roster]
+    except KeyError:raise ValueError('真实AI战术名单与当前存档不匹配，请重新生成')
+    club=next((item for item in inputs.get('clubs')or [] if item['uid']==int(club_uid)),None)
+    if club is None:raise ValueError('真实AI战术球队不属于当前执教联赛')
+    team=_team(lib,1,club.get('short_name')or club.get('name')or'对手',chosen,tactic_name)
+    lib.apply_plan(team,plan)
+    indices={player.get('source_uid'):index for index,player in enumerate(team['players'][:team['roster_size']])}
+    try:team['lineup']=[indices[uid]for uid in plan['lineup_source_uids']]
+    except KeyError:raise ValueError('真实AI战术首发与名单不一致')
+    return team
+
+
+def record(lib,key,result,prepared=None,created=None):
+    """One stored variant: engine plan, its roster and generation receipt."""
+    import datetime
+    opponent=result['team']
+    return {'index':1 if result['venue']=='H' else 2,'venue':result['venue'],
+        'label':variant_label(result['venue']),
+        'name':variant_name(lib,opponent.get('name'),result.get('opponent_coach')or'',result['venue']),
+        'tactic_name':opponent.get('tactic_name'),'plan':result['native_plan'],
+        'roster':result['opponent_roster'],'club_uid':result['opponent_club'],
+        'club':opponent.get('name'),'coach':result.get('opponent_coach')or'',
+        'plan_sha256':hashlib.sha256(json.dumps(result['native_plan'],sort_keys=True,separators=(',',':')).encode()).hexdigest(),
+        'payload_sha256':result['payload_sha256'],'config_sha256':result['config_sha256'],
+        'generated_at':created or datetime.datetime.now().astimezone().isoformat(timespec='seconds')}

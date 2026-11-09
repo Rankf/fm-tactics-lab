@@ -7,6 +7,7 @@ from pathlib import Path
 import struct
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -15,6 +16,7 @@ sys.path.insert(0,str(ROOT/'src'))
 import desktop_coach_presets
 import desktop_game_db_names
 import desktop_real_generation
+import desktop_real_library
 import desktop_generation_protocol
 import desktop_save_compat
 import desktop_save_export
@@ -408,7 +410,7 @@ class SaveLibraryLeagueTests(unittest.TestCase):
         self.assertIn('最多保存',str(caught.exception))
         self.assertEqual(len(scenario['away_tactic_pool']['entries']),fm27_tactic_pool.MAX_ENTRIES)
 
-class RealAITacticExportTests(unittest.TestCase):
+class RealGenerationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.temp_root=ROOT/'build/test-temp';cls.temp_root.mkdir(parents=True,exist_ok=True)
@@ -419,7 +421,7 @@ class RealAITacticExportTests(unittest.TestCase):
         self.names=mock.patch.object(desktop_game_db_names,'resolve',
             return_value={'competitions':{101:'测试甲级联赛',102:'测试乙级联赛'},'nations':{5:'英格兰'},'source':'game_db'})
         self.names.start()
-        key='0123456789abcdef';folder=self.lib.root/key;folder.mkdir(parents=True)
+        self.key='0123456789abcdef';folder=self.lib.root/self.key;folder.mkdir(parents=True)
         data={'schema':4,'source':SOURCE['source'],'source_sha256':SOURCE['source_sha256'],'date':SOURCE['date'],
               'build':SOURCE['build'],'tactics':[],'fixtures':[],'selections':[],'caches':[],'managed':[{'club_uid':1}],
               'clubs':[{'uid':1,'name':'甲队','short_name':'甲','nation_id':14}],
@@ -433,77 +435,143 @@ class RealAITacticExportTests(unittest.TestCase):
               'nations':{'14':5},'competitions':{'17':101,'18':102}}
         (folder/'dataset.json').write_text(json.dumps(data,ensure_ascii=False),encoding='utf8')
         self.lib.check_binding(folder);desktop_save_mode.dataset.cache_clear()
-        self.key=key;self.directory=self.root/'out';self.directory.mkdir()
+        self.directory=self.root/'out';self.directory.mkdir()
         self.plan=sample_plan(11)
         self.app.DEFAULT={'teams':[{'name':'甲','players':[]},{'name':'乙','players':[]}]}
-        self.preview={'team':{'name':'乙','players':[],'roster_size':11,'tactic_name':'本场原生AI生成'},
-            'native_plan':{'mentality':5,'team_bits':'00'*16,'lineup_source_uids':list(range(11))},
-            'payload_sha256':'a'*64,'config_sha256':'b'*64,'opponent_coach':'乙队主教练',
-            'opponent_roster':[100,101,102]}
+        self.app.validate_scenario=lambda value:value
         def export_fmf(data):
             return {'file_base64':base64.b64encode(fm27_fmf.tactics_archive(self.plan,data['name'])).decode(),
                     'report':{'native_roundtrip_verified':True,'sha256':'c'*64}}
         self.app.export_fmf=export_fmf
+        self.preview_calls=[]
 
     def tearDown(self):
         self.names.stop();desktop_save_mode.dataset.cache_clear();self.holder.cleanup()
 
-    def run_export(self,club=2):
-        with mock.patch.object(desktop_real_generation,'preview',return_value=dict(self.preview))as preview:
-            result=self.lib.export_real_ai_tactic(self.key,'17:200:2026',club,str(self.directory))
-        return result,preview
+    def result(self,club_uid,venue):
+        return {'team':{'name':f'队{club_uid}','players':[],'roster_size':11,'tactic_name':f'真实-{club_uid}-{venue}'},
+            'native_plan':{'mentality':5,'team_bits':'00'*16,'lineup_source_uids':list(range(11))},
+            'venue':venue,'seed':0,'payload_sha256':'a'*64,'config_sha256':('b'*64),
+            'own_club':1,'opponent_club':club_uid,'own_coach':'甲帅','opponent_coach':f'教练{club_uid}',
+            'own_roster':list(range(100,123)),'opponent_roster':list(range(club_uid*100,club_uid*100+23))}
 
-    def test_exports_engine_generated_tactic_with_receipt(self):
-        result,preview=self.run_export()
-        preview.assert_called_once()
-        self.assertEqual(preview.call_args.args[2:],(1,2))
-        root=Path(result['directory'])
-        self.assertRegex(root.name,r'^FM27真实AI战术-\d{8}-\d{6}$')
+    def patches(self):
+        def preview(lib,key,own,opponent,venue='H',seed=0,prepared=None):
+            self.preview_calls.append((opponent,venue))
+            return self.result(opponent,venue)
+        return [mock.patch.object(desktop_real_generation,'ensure',return_value={'inputs':{},'staff':{}}),
+                mock.patch.object(desktop_real_generation,'preview',side_effect=preview)]
+
+    def wait_complete(self,timeout=15):
+        deadline=time.time()+timeout
+        while time.time()<deadline:
+            state=self.lib.real_generation_status(self.key,'17:200:2026')
+            if state.get('status')!='reading':return state
+            time.sleep(0.02)
+        raise AssertionError('generation timeout')
+
+    def test_batch_generates_two_contexts_per_opponent_and_reports_progress(self):
+        started=self.patches()
+        for patch in started:patch.start();self.addCleanup(patch.stop)
+        state=self.lib.start_real_generation(self.key,'17:200:2026')
+        self.assertEqual(state['status'],'reading');self.assertEqual(state['total'],4)
+        complete=self.wait_complete()
+        self.assertEqual(complete['status'],'complete')
+        self.assertEqual(complete['count'],2);self.assertEqual(complete['variant_count'],4)
+        self.assertEqual(sorted(self.preview_calls),[(2,'A'),(2,'H'),(3,'A'),(3,'H')])
+        library=desktop_real_library.load(self.lib,self.key,'17:200:2026')
+        self.assertIsNotNone(library)
+        self.assertEqual(library['source_sha256'],SOURCE['source_sha256'])
+        self.assertEqual(library['own_club'],1)
+        teams={row['club_uid']:row for row in library['teams']}
+        self.assertEqual(sorted(teams),[2,3])
+        self.assertEqual([variant['venue']for variant in desktop_real_library.variants(teams[2])],['H','A'])
+        self.assertTrue(all('你主场'in variant['name']or'你客场'in variant['name']for variant in desktop_real_library.variants(teams[2])))
+        self.assertEqual(len({variant['plan_sha256']for variant in desktop_real_library.variants(teams[2])}),1)
+        again=self.lib.start_real_generation(self.key,'17:200:2026')
+        self.assertEqual(again['status'],'complete')
+        self.assertEqual(len(self.preview_calls),4)
+
+    def test_force_regenerates_existing_variants(self):
+        started=self.patches()
+        for patch in started:patch.start();self.addCleanup(patch.stop)
+        self.lib.start_real_generation(self.key,'17:200:2026');self.wait_complete()
+        self.assertEqual(len(self.preview_calls),4)
+        again=self.lib.start_real_generation(self.key,'17:200:2026',force=True)
+        self.assertEqual(again['status'],'reading');self.assertEqual(again['total'],4)
+        self.wait_complete()
+        self.assertEqual(len(self.preview_calls),8)
+
+    def test_single_team_generation_merges_into_library(self):
+        started=self.patches()
+        for patch in started:patch.start();self.addCleanup(patch.stop)
+        value=self.lib.generate_real_team(self.key,'17:200:2026',2)
+        self.assertEqual(value['status'],'complete');self.assertEqual(value['variant_count'],2)
+        self.assertEqual(sorted(self.preview_calls),[(2,'A'),(2,'H')])
+        library=desktop_real_library.load(self.lib,self.key,'17:200:2026')
+        self.assertEqual([row['club_uid']for row in library['teams']],[2])
+
+    def test_export_uses_generated_library(self):
+        started=self.patches()
+        for patch in started:patch.start();self.addCleanup(patch.stop)
+        self.lib.start_real_generation(self.key,'17:200:2026');self.wait_complete()
+        with mock.patch.object(desktop_real_generation,'team_from_plan',return_value={'name':'队2'}):
+            result=self.lib.export_league_tactics(self.key,'17:200:2026',str(self.directory))
+        self.assertEqual(result['source'],'real_ai')
         self.assertEqual(result['profile'],desktop_save_export.REAL_PROFILE)
-        self.assertEqual([entry['file']for entry in result['files']],['乙-乙队主教练-真实AI战术.fmf'])
-        self.assertEqual(fm27_fmf.tactics_plan((root/'乙-乙队主教练-真实AI战术.fmf').read_bytes()),self.plan)
-        report=result['files'][0]['report']
-        self.assertTrue(report['native_roundtrip_verified'])
-        self.assertEqual(report['source'],'original_engine_generation')
-        self.assertEqual(report['preview_seed'],0)
-        self.assertEqual(report['generated_mentality'],5)
-        self.assertEqual(report['payload_sha256'],'a'*64)
-        self.assertEqual(report['opponent_roster'],[100,101,102])
-        notice=(root/'导出说明.txt').read_text(encoding='utf8')
-        self.assertIn('原版引擎',notice)
-        self.assertIn('预览种子 0',notice)
-        self.assertEqual(result['club'],'乙')
-        self.assertEqual(result['coach'],'乙队主教练')
+        self.assertEqual(len(result['files']),4)
+        self.assertTrue(all('你主场'in entry['file']or'你客场'in entry['file']for entry in result['files']))
+        self.assertRegex(Path(result['directory']).name,r'^FM27真实AI战术-')
+        for entry in result['files']:
+            self.assertEqual(fm27_fmf.tactics_plan((Path(result['directory'])/entry['file']).read_bytes()),self.plan)
+            self.assertEqual(entry['report']['source'],'original_engine_generation')
+            self.assertIn(entry['report']['venue'],('H','A'))
+        notice=(Path(result['directory'])/'导出说明.txt').read_text(encoding='utf8')
+        self.assertIn('你主场与客场',notice)
 
-    def test_rejects_own_team_other_league_and_foreign_club(self):
-        with mock.patch.object(desktop_real_generation,'preview')as preview:
-            with self.assertRaises(ValueError):self.lib.export_real_ai_tactic(self.key,'17:200:2026',1,str(self.directory))
-            with self.assertRaises(ValueError):self.lib.export_real_ai_tactic(self.key,'17:200:2026',9,str(self.directory))
-            with self.assertRaises(ValueError)as caught:self.lib.export_real_ai_tactic(self.key,'18:300:2026',2,str(self.directory))
-        self.assertIn('执教的联赛',str(caught.exception))
-        preview.assert_not_called()
+    def test_pool_import_uses_generated_library(self):
+        started=self.patches()
+        for patch in started:patch.start();self.addCleanup(patch.stop)
+        self.lib.start_real_generation(self.key,'17:200:2026');self.wait_complete()
+        scenario={'teams':[{'name':'甲'},{'name':'乙'}]}
+        self.app.validate_scenario=lambda value:value
+        with mock.patch.object(desktop_real_generation,'team_from_plan',return_value=preset_team(extra='3')):
+            value=self.lib.import_league_tactics_pool(self.key,'17:200:2026',scenario)
+        self.assertEqual(value['source'],'real_ai')
+        self.assertEqual(len(value['imported']),4)
+        self.assertEqual(len(value['scenario']['away_tactic_pool']['entries']),4)
+        self.assertEqual([row['venue']for row in value['imported']],['H','A','H','A'])
+        self.assertTrue(all(row['label']in('你主场','你客场')for row in value['imported']))
 
-    def test_engine_unavailable_fails_before_generation(self):
-        self.app.desktop_engine.require_available=lambda compatibility:(_ for _ in ()).throw(ValueError('引擎不可用'))
-        with mock.patch.object(desktop_real_generation,'preview')as preview:
-            with self.assertRaises(ValueError):self.lib.export_real_ai_tactic(self.key,'17:200:2026',2,str(self.directory))
-        preview.assert_not_called()
-
-    def test_concurrent_export_is_rejected(self):
-        self.assertTrue(self.lib.real_export_lock.acquire(blocking=False))
+    def test_validation_rejects_own_team_foreign_league_and_concurrency(self):
+        with self.assertRaises(ValueError):self.lib.generate_real_team(self.key,'17:200:2026',1)
+        with self.assertRaises(ValueError):self.lib.generate_real_team(self.key,'18:300:2026',2)
+        self.assertTrue(self.lib.real_generation_lock.acquire(blocking=False))
         try:
-            with mock.patch.object(desktop_real_generation,'preview')as preview:
-                with self.assertRaises(ValueError)as caught:
-                    self.lib.export_real_ai_tactic(self.key,'17:200:2026',2,str(self.directory))
-            self.assertIn('正在生成',str(caught.exception));preview.assert_not_called()
+            with self.assertRaises(ValueError)as caught:
+                self.lib.generate_real_team(self.key,'17:200:2026',2)
+            self.assertIn('正在生成',str(caught.exception))
         finally:
-            self.lib.real_export_lock.release()
+            self.lib.real_generation_lock.release()
 
-    def test_generation_failure_leaves_no_output(self):
-        with mock.patch.object(desktop_real_generation,'preview',side_effect=ValueError('原版引擎未返回完整的双方战术回读')):
-            with self.assertRaises(ValueError):self.lib.export_real_ai_tactic(self.key,'17:200:2026',2,str(self.directory))
-        self.assertEqual(list(self.directory.iterdir()),[])
+    def test_league_library_shows_generated_variants(self):
+        started=self.patches()
+        for patch in started:patch.start();self.addCleanup(patch.stop)
+        self.lib.start_real_generation(self.key,'17:200:2026');self.wait_complete()
+        with mock.patch.object(desktop_coach_presets,'ensure',return_value={'teams':[self.coach_row(2),self.coach_row(3)],'failures':[]}):
+            self.lib.build_league_report(self.key,'17:200:2026')
+            value=self.lib.league_library(self.key,'17:200:2026')
+        self.assertEqual(value['status'],'complete')
+        self.assertIsNotNone(value['real'])
+        self.assertEqual(value['real']['variant_count'],4)
+        rows={row['club_uid']:row for row in value['teams']}
+        self.assertTrue(rows[2]['real']);self.assertTrue(all(variant['source']=='real_ai'for variant in rows[2]['variants']))
+        self.assertEqual([variant['label']for variant in rows[2]['variants']],['你主场','你客场'])
 
+    def coach_row(self,club_uid):
+        return {'club_uid':club_uid,'name':f'队{club_uid}','coach_name':f'教练{club_uid}','available':True,
+            'variants':[{'index':1,'preset_index':1,'preset_sha256':'d'*64,'preset_name':'预设1','formation':'','formation_code':1,'exact':True,'position_difference':0},
+                        {'index':2,'preset_index':2,'preset_sha256':'e'*64,'preset_name':'预设2','formation':'','formation_code':2,'exact':True,'position_difference':0}],'error':None}
 
 class RealGenerationPayloadTests(unittest.TestCase):
     def inputs(self):
@@ -533,6 +601,14 @@ class RealGenerationPayloadTests(unittest.TestCase):
         self.assertEqual(len(chosen),23)
         self.assertTrue(any(desktop_real_generation.is_goalkeeper(player)for player in chosen))
         self.assertIn(100024,{player['unique_id']for player in chosen})
+    def test_side_record_rejects_out_of_range_formation_codes(self):
+        inputs=self.inputs();club=inputs['clubs'][1];coach=inputs['staff'][1]
+        native=self.native();extra=bytearray(bytes.fromhex(native['native_d4_to_f4_hex']));extra[11]=65
+        native['native_d4_to_f4_hex']=extra.hex()
+        with self.assertRaises(ValueError)as caught:
+            desktop_real_generation._side_record(inputs,club,coach,native,False,desktop_real_generation.roster(inputs,2))
+        self.assertIn('主教练档案',str(caught.exception))
+
     def test_side_record_matches_native_duel_layout(self):
         inputs=self.inputs();club=inputs['clubs'][1];coach=inputs['staff'][1]
         players=desktop_real_generation.roster(inputs,2)

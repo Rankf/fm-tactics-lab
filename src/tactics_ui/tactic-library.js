@@ -1,5 +1,5 @@
 'use strict';
-let librarySave=null,libraryLeagues=null,libraryLeague=null,libraryReport=null,libraryStage='',libraryExport=null,libraryTimer,libraryLeaguesLoading=false,libraryLeaguesError='',libraryLeagueError=false,librarySearch='',libraryLeagueToken=0;
+let librarySave=null,libraryLeagues=null,libraryLeague=null,libraryReport=null,libraryStage='',libraryExport=null,libraryTimer,libraryLeaguesLoading=false,libraryLeaguesError='',libraryLeagueError=false,librarySearch='',libraryLeagueToken=0,libraryRealProgress=null,libraryRealToken=0;
 const libraryDirectory=()=>localStorage.getItem('fm27-export-directory')||'';
 function libraryRefresh(){if(view==='library')render()}
 function librarySetStage(value){libraryStage=value;const element=$('#library-stage');if(element)element.textContent=value}
@@ -58,6 +58,7 @@ function libraryLeaguesCard(){
 function libraryVariant(team,index){
  const variant=(team.variants||[]).find(item=>item.index===index);
  if(!variant)return '—';
+ if(variant.source==='real_ai')return `<span title="${esc(variant.tactic_name||variant.name||'')}"><span class="tag">真实</span> ${esc(variant.label||'')}</span>`;
  return `<span title="${esc(variant.name||variant.preset_name||'')}">${esc(variant.preset_name||'—')}${variant.formation?` <span class="tiny muted">${esc(variant.formation)}</span>`:''}</span>`;
 }
 function libraryExportResult(){
@@ -66,14 +67,24 @@ function libraryExportResult(){
 }
 function libraryReportBody(report){
  const teams=report.teams||[],failures=report.failures||[],own=!!report.league?.own;
- const real=team=>own?`<td class="tiny"><button type="button" class="button small" data-real-tactic="${team.club_uid}" ${team.available===false?'disabled':''}>生成</button></td>`:'';
+ const progress=libraryRealProgress,reading=progress?.status==='reading';
+ const total=progress?.total||0,done=progress?.done||0,pct=total?Math.round(done*100/total):0;
+ const real=team=>{
+  if(!own)return '';
+  const has=team.real===true||(team.variants||[]).some(item=>item.source==='real_ai');
+  return `<td class="tiny"><button type="button" class="button small" data-real-tactic="${team.club_uid}" ${team.available===false||reading?'disabled':''}>${has?'重新生成':'生成'}</button></td>`;
+ };
  const rows=teams.map(team=>`<tr><td>${esc(team.name||'')}</td><td>${esc(team.coach_name||'—')}</td><td>${libraryVariant(team,1)}</td><td>${libraryVariant(team,2)}</td><td class="tiny muted">${team.error?esc(team.error):team.available===false?'暂不可用':'可用'}</td>${real(team)}</tr>`).join('');
  const head=own?'<th>球队</th><th>教练</th><th>第一套</th><th>第二套</th><th>状态</th><th>真实战术</th>':'<th>球队</th><th>教练</th><th>第一套</th><th>第二套</th><th>状态</th>';
  const table=teams.length?`<div class="table-scroll"><table class="library-table"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`:`<p class="tiny muted">没有找到对手球队</p>`;
  const details=failures.length?`<details><summary>失败 ${failures.length} 项</summary>${failures.map(f=>`<p class="tiny">${esc(f.name||'')}：${esc(f.error||'读取失败')}</p>`).join('')}</details>`:'';
- const hint=own?'<p class="tiny muted">真实战术由本机原版引擎生成，首次较慢。</p>':'';
- const controls=`<div class="save-team-controls"><label>导出目录<input id="library-directory" value="${esc(libraryDirectory())}" placeholder="选择本机文件夹"></label><button id="library-folder" class="button">选择目录…</button><button id="library-export" class="button">导出全部战术</button><button id="library-pool" class="button primary">导入客队战术池</button></div>`;
- return `${table}${details}${hint}${controls}${libraryExportResult()}`;
+ const summary=report.real&&!reading?`<div class="notice">真实AI战术已就绪：${report.real.count} 队 / ${report.real.variant_count} 套 · 用时 ${Math.round(report.real.elapsed_seconds||0)} 秒</div>`:'';
+ const realFailures=(report.real?.failures||[]).length?`<details><summary>真实战术失败 ${report.real.failures.length} 项</summary>${report.real.failures.map(f=>`<p class="tiny">${esc(f.club||('#'+f.club_uid))} · ${esc(f.venue==='H'?'你主场':'你客场')}：${esc(f.error||'生成失败')}</p>`).join('')}</details>`:'';
+ const bar=own&&reading?`<div class="real-progress" role="status"><div class="real-progress-track"><div class="real-progress-bar" style="width:${pct}%"></div></div><p class="tiny muted">${esc(progress.stage||'正在生成真实AI战术')}</p></div>`:'';
+ const hint=own?'<p class="tiny muted">真实战术对每个对手生成你主场、你客场两套；由本机原版引擎准备，首次较慢。</p>':'';
+ const realButton=own?`<button id="library-real-all" class="button" ${reading?'disabled':''}>${report.real?'重新生成全部':'生成全部真实战术'}</button>`:'';
+ const controls=`<div class="save-team-controls"><label>导出目录<input id="library-directory" value="${esc(libraryDirectory())}" placeholder="选择本机文件夹"></label><button id="library-folder" class="button">选择目录…</button><button id="library-export" class="button" ${reading?'disabled':''}>导出全部战术</button><button id="library-pool" class="button primary" ${reading?'disabled':''}>导入客队战术池</button>${realButton}</div>`;
+ return `${summary}${realFailures}${bar}${table}${details}${hint}${controls}${libraryExportResult()}`;
 }
 function libraryLeagueCard(){
  if(!libraryLeague)return '';
@@ -112,7 +123,8 @@ function bindLibrary(){
  if($('#library-folder'))$('#library-folder').onclick=async()=>{try{const r=await api('/api/save/pick-folder',{});if(r.path){localStorage.setItem('fm27-export-directory',r.path);$('#library-directory').value=r.path}}catch(e){toast('选择目录失败：'+e.message)}};
  if($('#library-export'))$('#library-export').onclick=exportLibrary;
  if($('#library-pool'))$('#library-pool').onclick=importLibraryPool;
- $$('[data-real-tactic]').forEach(button=>button.onclick=()=>exportRealTactic(button));
+ if($('#library-real-all'))$('#library-real-all').onclick=generateLibraryReal;
+ $$('[data-real-tactic]').forEach(button=>button.onclick=()=>generateRealTeam(button));
 }
 async function readLibrary(){
  const path=$('#library-path')?.value.trim()||'';
@@ -121,7 +133,7 @@ async function readLibrary(){
  clearTimeout(libraryTimer);
  libraryLeagueToken++;
  librarySave={id:null,status:'reading',stage:'正在读取存档',source:path};
- libraryLeagues=null;libraryLeaguesLoading=false;libraryLeaguesError='';libraryLeague=null;libraryReport=null;libraryLeagueError=false;libraryExport=null;libraryStage='';librarySearch='';
+ libraryLeagues=null;libraryLeaguesLoading=false;libraryLeaguesError='';libraryLeague=null;libraryReport=null;libraryLeagueError=false;libraryExport=null;libraryStage='';librarySearch='';libraryRealProgress=null;libraryRealToken++;
  libraryRefresh();
  try{
   const result=await api('/api/save/import',{path});
@@ -168,7 +180,7 @@ async function loadLibraryLeagues(){
 }
 function selectLibraryLeague(key){
  if(libraryLeague===key)return;
- libraryLeague=key;libraryReport=null;libraryExport=null;libraryLeagueError=false;
+ libraryLeague=key;libraryReport=null;libraryExport=null;libraryLeagueError=false;libraryRealProgress=null;libraryRealToken++;
  libraryRefresh();
  loadLibraryLeague();
 }
@@ -195,20 +207,47 @@ async function exportLibrary(){
   const result=await api('/api/save/league-export',{id:librarySave.id,league:libraryLeague,directory});
   localStorage.setItem('fm27-export-directory',directory);
   libraryExport=result;libraryRefresh();
-  toast(`已导出 ${result.files?.length||0} 个战术文件到 ${result.directory||directory}`);
+  toast(`${result.source==='real_ai'?'已导出真实AI战术':'已导出'} ${result.files?.length||0} 个文件到 ${result.directory||directory}`);
  }catch(e){toast('导出失败：'+e.message);if($('#library-export')){$('#library-export').disabled=false;$('#library-export').textContent='导出全部战术'}}
 }
-async function exportRealTactic(button){
- const id=librarySave?.id,league=libraryLeague,directory=$('#library-directory')?.value.trim()||'';
- if(!id||!league)return;
- if(!directory){toast('请填写或选择导出目录');return}
+async function generateRealTeam(button){
+ const id=librarySave?.id,league=libraryLeague;if(!id||!league)return;
  const label=button.textContent;button.disabled=true;button.textContent='生成中';
+ libraryRealProgress={status:'reading',done:0,total:2,stage:'正在生成真实AI战术'};libraryRefresh();
  try{
-  const result=await api('/api/save/league-real-tactic',{id,league,club_uid:+button.dataset.realTactic,directory});
-  localStorage.setItem('fm27-export-directory',directory);
-  libraryExport={...result,failures:[]};libraryRefresh();
-  toast(`已生成真实战术文件：${result.files?.[0]?.file||''}`);
- }catch(e){toast('真实战术生成失败：'+e.message);button.disabled=false;button.textContent=label}
+  const result=await api('/api/save/real-generation',{id,league,club_uid:+button.dataset.realTactic,force:true});
+  if(result.status!=='complete')throw Error(result.stage||'真实AI战术生成失败');
+  libraryRealProgress=null;
+  await loadLibraryLeague();
+  toast(`已生成真实AI战术 ${result.variant_count||0} 套`);
+ }catch(e){libraryRealProgress=null;libraryRefresh();toast('真实战术生成失败：'+e.message);button.disabled=false;button.textContent=label}
+}
+async function generateLibraryReal(){
+ const id=librarySave?.id,league=libraryLeague;if(!id||!league)return;
+ const token=++libraryRealToken;
+ libraryRealProgress={status:'reading',done:0,total:0,stage:'正在读取教练与阵容'};libraryRefresh();
+ try{
+  const started=await api('/api/save/real-generation',{id,league,force:!!libraryReport?.real});
+  if(started.status==='complete'){libraryRealProgress=null;await loadLibraryLeague();toast(`真实AI战术已就绪 ${started.variant_count||0} 套`);return}
+  libraryRealProgress=started;libraryRefresh();
+  await pollLibraryReal(token,id,league);
+ }catch(e){if(token!==libraryRealToken)return;libraryRealProgress=null;libraryRefresh();toast('真实战术生成失败：'+e.message)}
+}
+async function pollLibraryReal(token,id,league){
+ while(token===libraryRealToken){
+  await new Promise(resolve=>setTimeout(resolve,1000));
+  if(token!==libraryRealToken||librarySave?.id!==id||libraryLeague!==league)return;
+  let value;
+  try{value=await api('/api/save/real-generation-status',{id,league})}
+  catch(e){libraryRealProgress=null;libraryRefresh();toast('真实战术生成状态读取失败：'+e.message);return}
+  libraryRealProgress=value;
+  if(value.status==='reading'){libraryRefresh();continue}
+  if(value.status==='error'){libraryRealProgress=null;libraryRefresh();toast('真实战术生成失败：'+(value.stage||'未知错误'));return}
+  libraryRealProgress=null;
+  await loadLibraryLeague();
+  toast(`真实AI战术已生成 ${value.count||0} 队 / ${value.variant_count||0} 套`);
+  return;
+ }
 }
 async function importLibraryPool(){
  const button=$('#library-pool');if(!button||!librarySave?.id||!libraryLeague)return;
@@ -217,7 +256,7 @@ async function importLibraryPool(){
   const result=await libraryRequest('/api/save/league-pool',{id:librarySave.id,league:libraryLeague,scenario:clone(state)},stage=>{if(button)button.textContent=stage||'正在导入…'});
   if(result.status==='error')throw Error(result.stage||'导入客队战术池失败');
   state=result.scenario;save();
-  toast(`已导入 ${result.imported?.length||0} 套战术`);
+  toast(`已导入 ${result.imported?.length||0} 套${result.source==='real_ai'?'真实AI战术':'战术'}`);
   view='pool';render();
  }catch(e){toast('导入客队战术池失败：'+e.message);if($('#library-pool')){$('#library-pool').disabled=false;$('#library-pool').textContent='导入客队战术池'}}
 }

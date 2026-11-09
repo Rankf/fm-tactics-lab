@@ -858,9 +858,13 @@ class Handler(BaseHTTPRequestHandler):
                 if path=='/api/save/league-export':
                     require_league_idle('导出存档战术')
                     return self.send(SAVE_LIBRARY.export_league_tactics(data['id'],data['league'],data['directory']))
-                if path=='/api/save/league-real-tactic':
-                    require_league_idle('导出真实AI战术')
-                    return self.send(SAVE_LIBRARY.export_real_ai_tactic(data['id'],data['league'],data['club_uid'],data['directory']))
+                if path=='/api/save/real-generation-status':
+                    return self.send(SAVE_LIBRARY.real_generation_status(data['id'],data['league']))
+                if path=='/api/save/real-generation':
+                    require_league_idle('生成真实AI战术')
+                    if data.get('club_uid') is not None:
+                        return self.send(SAVE_LIBRARY.generate_real_team(data['id'],data['league'],data['club_uid'],bool(data.get('force'))))
+                    return self.send(SAVE_LIBRARY.start_real_generation(data['id'],data['league'],data.get('clubs'),bool(data.get('force'))))
                 if path=='/api/save/league-pool':
                     require_league_idle('导入客队战术池')
                     return self.send(SAVE_LIBRARY.import_league_tactics_pool(data['id'],data['league'],data['scenario']))

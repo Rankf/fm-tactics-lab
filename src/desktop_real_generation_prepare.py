@@ -27,21 +27,54 @@ def prepare(source,folder):
         raise ValueError('来源存档已改变，请重新读取')
     target=folder/'staff_fragments';target.mkdir(exist_ok=True)
     rows=[]
+    import desktop_generation_human
+
+    def preset_fragment(selector,digest):
+        root=folder.parent/'league_presets'
+        if not root.is_dir():return None
+        for metadata in root.glob('*/static_coaches/staff_fragments.json'):
+            try:value=json.loads(metadata.read_text(encoding='utf8'))
+            except (OSError,ValueError):continue
+            if value.get('source_sha256')!=digest:continue
+            row=next((item for item in value.get('rows')or [] if item.get('person_selector')==selector),None)
+            if row is None:continue
+            raw=metadata.parent/'first_team_staff_fragments'/f'{selector}.bin'
+            if not raw.is_file():continue
+            return {'raw':raw.read_bytes(),'profile_hex':row['profile_hex'],'codes_hex':row['codes_hex']}
+        return None
+
+    league_clubs={club['uid']for club in inputs.get('clubs')or []}
+    def wanted(staff):
+        if staff.get('club_uid')not in league_clubs or staff.get('is_human_manager'):return False
+        return (staff.get('job')or {}).get('raw')==16 and staff.get('has_contract')is True
     with fmsave.open(source)as save:
         with save._context.section('game_db')as db:
             for staff in inputs['staff']:
-                profile=staff.get('generation_profile')
-                if not profile:continue
+                if not wanted(staff):continue
                 selector=staff.get('person_selector')
                 if type(selector)is not int:continue
-                header=profile['header_offset'];profile_offset=profile['profile_offset']
-                start=header+13;end=profile_offset+52+4096
-                if not (start<profile_offset<end<=len(db)):raise ValueError('教练档案边界无效')
-                raw=bytes(db[start:end])
-                (target/f'{selector}.bin').write_bytes(raw)
-                rows.append({'person_selector':selector,'human':False,'uid':staff.get('uid'),
-                    'profile_hex':profile['raw_52_bytes_hex'],'codes_hex':profile['formation_codes_hex'],
-                    'raw_sha256':hashlib.sha256(raw).hexdigest()})
+                try:
+                    profile=staff.get('generation_profile')
+                    if profile:
+                        header=profile['header_offset'];profile_offset=profile['profile_offset']
+                        start=header+13;end=profile_offset+52+4096
+                        if not (start<profile_offset<end<=len(db)):raise ValueError('教练档案边界无效')
+                        raw=bytes(db[start:end]);profile_hex=profile['raw_52_bytes_hex'];codes=profile['formation_codes_hex']
+                    else:
+                        cached=preset_fragment(selector,inputs['source_sha256'])
+                        if cached is not None:
+                            raw=cached['raw'];profile_hex=cached['profile_hex'];codes=cached['codes_hex']
+                        else:
+                            header=staff.get('header');uid=staff.get('unique_id')
+                            if type(header)is not int or type(uid)is not int:raise ValueError('教练档案位置未知')
+                            located=desktop_generation_human.locate(db,header,selector,uid)
+                            raw=bytes(db[located['body_offset']:located['closing_person_offset']])
+                            profile_hex=located['raw_52_bytes_hex'];codes=located['formation_codes_hex']
+                    (target/f'{selector}.bin').write_bytes(raw)
+                    rows.append({'person_selector':selector,'human':False,'uid':staff.get('uid'),
+                        'profile_hex':profile_hex,'codes_hex':codes,'raw_sha256':hashlib.sha256(raw).hexdigest()})
+                except Exception as error:
+                    print('skip staff',selector,error,file=sys.stderr,flush=True)
     human=_human(folder)
     human_row=None
     if 'error' not in human:
