@@ -287,6 +287,16 @@ class SaveLibraryLeagueTests(unittest.TestCase):
         self.assertEqual(catalog['leagues'],[{'key':'17:200:2026','competition_id':17,'name':'测试甲级联赛',
             'nation':'英格兰','club_count':4,'season':2026,'first_date':'2026-08-01','last_date':'2027-05-01'}])
 
+    def test_league_catalog_falls_back_to_numbers_without_game_db_names(self):
+        key,_=self.save()
+        self.names.stop()
+        with mock.patch.object(desktop_game_db_names,'resolve',
+                return_value={'competitions':{},'nations':{},'source':'unavailable','detail':'missing'}):
+            catalog=self.lib.league_catalog(key)
+        self.assertEqual(catalog['name_source'],'unavailable')
+        self.assertEqual([(row['name'],row['nation'])for row in catalog['leagues']],
+            [('联赛 #17',None)])
+
     def test_league_catalog_requires_new_cache(self):
         key,folder=self.save()
         data=json.loads((folder/'dataset.json').read_text(encoding='utf8'));data.pop('leagues')
