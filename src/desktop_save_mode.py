@@ -27,6 +27,7 @@ import desktop_observed_plans
 import desktop_coach_presets
 import desktop_source_plans
 import desktop_game_db_names
+import desktop_locale
 import desktop_save_export
 import fm27_fmf
 import fm27_tactic_pool
@@ -273,10 +274,13 @@ class SaveLibrary:
         return data,entry
 
     def _name_maps(self,folder,data,competition_ids,nation_ids):
-        stamp=(self.app.desktop_engine.sha(folder/'native_binding.json'),tuple(sorted(competition_ids)),tuple(sorted(nation_ids)))
+        language='zh' if str(desktop_locale.system_language().get('language','')).lower().startswith('zh') else 'en'
+        stamp=(self.app.desktop_engine.sha(folder/'native_binding.json'),language,
+               tuple(sorted(competition_ids)),tuple(sorted(nation_ids)))
         cached=self._names.get(stamp)
         if cached is not None:return cached
-        maps=desktop_game_db_names.resolve(os.environ.get('FM27_GAME_ROOT'),set(competition_ids),set(nation_ids))
+        maps=desktop_game_db_names.resolve(os.environ.get('FM27_GAME_ROOT'),set(competition_ids),
+            set(nation_ids),language=language)
         if len(self._names)>=8:self._names.clear()
         self._names[stamp]=maps
         return maps

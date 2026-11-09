@@ -16,7 +16,7 @@ async function libraryRequest(url,data,onStage,active){
 }
 function libraryLeagueData(){return libraryReport?.league||libraryLeagues?.leagues?.find(league=>league.key===libraryLeague)||null}
 const libraryLeagueName=league=>league.name||('联赛 #'+league.competition_id);
-function libraryLeagueSearch(league){return [libraryLeagueName(league),league.nation||'',league.season||''].join(' ').toLowerCase()}
+function libraryLeagueSearch(league){return [libraryLeagueName(league),league.nation||''].join(' ').toLowerCase()}
 function librarySaveCard(){
  const save=librarySave,reading=save?.status==='reading',complete=save?.status==='complete';
  return `<div class="card"><div class="card-head"><h2>识别存档</h2><span class="tiny" role="status" id="library-save-stage">${esc(save?.stage||'')}</span></div><div class="card-body"><div class="save-team-controls"><label>存档完整路径<input id="library-path" value="${esc(save?.source||'')}" placeholder="选择存档"></label><button id="library-pick" class="button">选择存档…</button><button id="library-read" class="button" ${reading?'disabled':''}>${reading?'正在读取存档':'读取存档'}</button></div>${complete?`<p class="tiny muted">存档日期 ${esc(save.date||'')} · 构建 ${esc(save.build||'')}</p>`:''}${save?.warnings?.length?`<details><summary>解析提示（${save.warnings.length}）</summary>${save.warnings.map(w=>`<p class="tiny">${esc(w)}</p>`).join('')}</details>`:''}</div></div>`;
@@ -24,9 +24,8 @@ function librarySaveCard(){
 function libraryLeagueRow(league){
  const active=league.key===libraryLeague;
  const name=libraryLeagueName(league);
- const season=league.season?`<small>${esc(league.season)} 赛季</small>`:'';
  const hidden=librarySearch&&!libraryLeagueSearch(league).includes(librarySearch.trim().toLowerCase());
- return `<button type="button" class="league-row ${active?'active':''}" data-league="${esc(league.key)}" data-league-search="${esc(libraryLeagueSearch(league))}" aria-pressed="${active}" ${hidden?'hidden':''}><span>${esc(name)}${season}</span>${league.club_count?`<span class="tag">${league.club_count} 队</span>`:''}</button>`;
+ return `<button type="button" class="league-row ${active?'active':''}" data-league="${esc(league.key)}" data-league-search="${esc(libraryLeagueSearch(league))}" aria-pressed="${active}" ${hidden?'hidden':''}><span>${esc(name)}</span>${league.club_count?`<span class="tag">${league.club_count} 队</span>`:''}</button>`;
 }
 function libraryLeaguesBody(list){
  const groups=new Map();

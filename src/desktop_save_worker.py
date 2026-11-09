@@ -44,7 +44,29 @@ def _value(row,name):
     return row.get(name) if isinstance(row,dict) else getattr(row,name,None)
 
 
-def league_catalog(fixtures,clubs,competitions=()):
+def _day_number(value):
+    return int(value.replace('-',''))if value else 0
+
+
+def _league_priority(entry,save_date):
+    """Rank a stage/season group for the one league entry a competition keeps."""
+    first=entry.get('first_date')or''
+    last=entry.get('last_date')or''
+    date=save_date or ''
+    active=bool(date and first and last and first<=date<=last)
+    upcoming=bool(date and first and first>date)
+    window=0 if active else 1 if upcoming else 2
+    if upcoming:
+        recency=_day_number(first)
+    elif window==2:
+        recency=-_day_number(last)
+    else:
+        recency=0
+    return (window,recency,-entry['fixture_count'],-len(entry['club_uids']),entry['key'])
+
+
+def league_catalog(fixtures,clubs,competitions=(),save_date=None):
+    """One entry per competition, using the active or nearest schedule."""
     database_ids={}
     for competition in competitions:
         competition_id=_value(competition,'id')
@@ -58,7 +80,7 @@ def league_catalog(fixtures,clubs,competitions=()):
         if type(competition_id)is not int or type(stage_id)is not int:continue
         groups[(competition_id,stage_id,_value(fixture,'season_start_year'))].append(fixture)
     registry={_value(club,'uid'):club for club in clubs}
-    leagues=[];members=set()
+    candidates=defaultdict(list)
     for (competition_id,stage_id,season),rows in groups.items():
         club_uids={_value(row,'home_club_uid')for row in rows}|{_value(row,'away_club_uid')for row in rows}
         count=len(club_uids)
@@ -67,11 +89,14 @@ def league_catalog(fixtures,clubs,competitions=()):
         if len(pairs)!=count*(count-1):continue
         if len(rows)>count*(count-1)*2:continue
         dates=sorted(str(_value(row,'date'))[:10]for row in rows if _value(row,'date')is not None)
-        leagues.append({'key':f'{competition_id}:{stage_id}:{season}','competition_id':competition_id,
-            'stage_id':stage_id,'season':season,'club_uids':sorted(club_uids),'fixture_count':len(rows),
+        candidates[competition_id].append({'key':f'{competition_id}:{stage_id}:{season}',
+            'competition_id':competition_id,'stage_id':stage_id,'season':season,
+            'club_uids':sorted(club_uids),'fixture_count':len(rows),
             'first_date':dates[0]if dates else None,'last_date':dates[-1]if dates else None,'complete':True})
-        members.update(club_uids)
+    leagues=[min(entries,key=lambda entry:_league_priority(entry,save_date))for entries in candidates.values()]
     leagues.sort(key=lambda entry:entry['key'])
+    members=set()
+    for entry in leagues:members.update(entry['club_uids'])
     league_clubs={}
     for uid in sorted(members):
         club=registry.get(uid)
@@ -202,7 +227,7 @@ def main(source, folder):
             fixtures = []
             warnings.append('赛程读取失败：'+str(error))
         try:
-            catalog = league_catalog(calendar, clubs, save.competitions())
+            catalog = league_catalog(calendar, clubs, save.competitions(), str(info.game_date))
         except Exception:
             catalog = {'leagues': [], 'league_clubs': {}, 'competitions': {}}
         try:

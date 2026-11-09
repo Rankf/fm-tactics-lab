@@ -2,7 +2,7 @@
 import collections,copy,hashlib,json,os,re,subprocess,sys,time
 from pathlib import Path
 import desktop_static_plans
-from desktop_coach_prepare import FRAGMENT_DIRECTORY, PROFILE as STAFF_PROFILE
+from desktop_coach_prepare import FRAGMENT_DIRECTORY, LEAGUE_PROFILE, PROFILE as STAFF_PROFILE
 from desktop_storage import bounded_output
 
 PROFILE='coach-preference-original-preset-v8'
@@ -118,13 +118,13 @@ def _selection(lib,index,clubs):
     if not rows:raise ValueError('联赛没有可读取的球队')
     return rows
 
-def _fresh_prepared(prepared,inputs,stamp,selection_sha):
+def _fresh_prepared(prepared,inputs,stamp,selection_sha,profile):
     required=[inputs,prepared/'source_team_table.json',prepared/'staff_fragments.json',prepared/FRAGMENT_DIRECTORY]
     if not all(p.exists()for p in required):return False
     try:
         data=read(inputs);table=read(prepared/'source_team_table.json')
     except (OSError,ValueError):return False
-    if data.get('source_sha256')!=stamp['source_sha256']or data.get('profile')!=STAFF_PROFILE:return False
+    if data.get('source_sha256')!=stamp['source_sha256']or data.get('profile')!=profile:return False
     if table.get('source_sha256')!=stamp['source_sha256']:return False
     if selection_sha is not None and data.get('selection_sha256')!=selection_sha:return False
     return True
@@ -146,7 +146,7 @@ def ensure(lib,key,clubs=None,slot=None):
         value=read(cache)
         if value.get('binding')==stamp:return value
     prepared=folder/'static_coaches';inputs=prepared/'inputs.json';fragments=prepared/FRAGMENT_DIRECTORY
-    if not _fresh_prepared(prepared,inputs,stamp,selection_sha):
+    if not _fresh_prepared(prepared,inputs,stamp,selection_sha,LEAGUE_PROFILE if clubs is not None else STAFF_PROFILE):
         data=index;source=read(root/'selected_source.json')['path']if(root/'selected_source.json').exists()else data['source']
         prepared.mkdir(exist_ok=True);bounded_output(prepared)
         command=[os.environ.get('FM27_SAVE_PYTHON',sys.executable),str(Path(__file__).with_name('desktop_coach_prepare.py')),source,str(prepared),str(root/'dataset.json')]
@@ -165,14 +165,11 @@ def ensure(lib,key,clubs=None,slot=None):
     lib.write(folder/'progress.json',{'stage':'核对教练原版读回并匹配原装预设'})
     catalog=assets(lib,root);teams=[];failures=[]
     managed={m['club_uid']for m in index['managed']}
-    for t in table['records']:
-        club=next(c for c in data['clubs']if any(x['team_id']==t['team_id']for x in c['teams']))
-        if club['uid']in managed:continue
-        selector=t['coach_person_reference'];staff=people.get(selector)
-        if staff and staff['is_human_manager']:continue
+
+    def build(club,staff_row,selector,team_id):
         try:
-            if selector==0xffffffff:raise ValueError('存档中未找到可确认的一线队主教练')
-            if not staff or staff['club_uid']!=club['uid']:raise ValueError('主教练球队引用不完整')
+            if staff_row is None or not isinstance(selector,int):raise ValueError('存档中未找到可确认的一线队主教练')
+            if staff_row.get('club_uid')!=club['uid']:raise ValueError('主教练球队引用不完整')
             n=coaches.get(selector);e=expected.get(selector)
             if not n or not e or n['profile_hex']!=e['profile_hex']:raise ValueError('教练偏好未通过原版读回')
             raw=bytes.fromhex(n['native_d4_to_f4_hex'])
@@ -186,14 +183,34 @@ def ensure(lib,key,clubs=None,slot=None):
                    'position_difference':option['position_difference']}for option in options]
             preset=options[0]['preset'];match=options[0]['match']
             test=copy.deepcopy(lib.app.DEFAULT['teams'][1]);lib.apply_plan(test,preset)
-            teams.append({'team_id':t['team_id'],'club_uid':club['uid'],'name':club.get('short_name')or club['name'],
-                          'coach_uid':staff['unique_id'],'coach_name':staff.get('name')or staff.get('full_name')or str(staff['unique_id']),
+            teams.append({'team_id':team_id,'club_uid':club['uid'],'name':club.get('short_name')or club['name'],
+                          'coach_uid':staff_row.get('unique_id'),
+                          'coach_name':staff_row.get('name')or staff_row.get('full_name')or str(staff_row.get('unique_id')),
                           'coach_selector':selector,'coach_assignment':'first_team_reference',
                           'style_id':style,'style_code':preset['style_code'],'preset_index':preset['index'],
                           'preset_sha256':digest(preset),'preset_name':preset['name'],'formation_match':match,
                           'variants':rows,'roster_size':None})
         except (ValueError,KeyError,StopIteration)as error:
             failures.append({'club_uid':club['uid'],'name':club.get('short_name')or club['name'],'error':str(error)})
+
+    if data.get('profile')==LEAGUE_PROFILE:
+        staff_by_club={}
+        for row in data.get('staff')or[]:
+            current=staff_by_club.get(row.get('club_uid'))
+            if current is None or (row.get('team_slot')==0 and current.get('team_slot')!=0):
+                staff_by_club[row['club_uid']]=row
+        for club in data['clubs']:
+            if club['uid']in managed:continue
+            staff_row=staff_by_club.get(club['uid'])
+            build(club,staff_row,staff_row.get('person_selector')if staff_row else None,
+                  staff_row.get('team_id')if staff_row else None)
+    else:
+        for t in table['records']:
+            club=next(c for c in data['clubs']if any(x['team_id']==t['team_id']for x in c['teams']))
+            if club['uid']in managed:continue
+            selector=t['coach_person_reference'];staff_row=people.get(selector)
+            if staff_row and staff_row['is_human_manager']:continue
+            build(club,staff_row,selector,t['team_id'])
     value={'binding':stamp,'selection_sha256':selection_sha,'teams':teams,'failures':failures,
            'source_date':data['date'],'preset_assets_binding':catalog['binding']}
     lib.write(cache,value);return value

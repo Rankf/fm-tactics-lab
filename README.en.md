@@ -56,7 +56,7 @@ Opponent tactics use a built-in preset selected from the head coach's saved styl
 
 ## Save tactics
 
-On **存档战术** (Save Tactics), read a save, then pick any loaded league in the game world to list every opponent head coach's preferences, excluding your club. Each coach produces two original game presets: one for his primary preferred formation and one for his secondary formation (tactic 1 and 2). Export the league's tactics into a local folder or add them to the away tactic pool in one click; pool imports are not deduplicated, so the same tactic may be added more than once. Exported files follow `club-coach-tactic N`. League and country names are read from the local FM27 game database; when unavailable the page falls back to league numbers. Exported files are preset approximations, not the actual match-day tactics.
+On **存档战术** (Save Tactics), read a save, then pick any loaded league in the game world to list every opponent head coach's preferences, excluding your club. Each coach produces two original game presets: one for his primary preferred formation and one for his secondary formation (tactic 1 and 2). Export the league's tactics into a local folder or add them to the away tactic pool in one click; pool imports are not deduplicated, so the same tactic may be added more than once. Exported files follow `club-coach-tactic N`. League and country names are read from the local FM27 game database and follow the interface language (Chinese or English); each league is listed once, using the active or nearest schedule, and unavailable names fall back to league numbers. Exported files are preset approximations, not the actual match-day tactics.
 
 ## Free Simulation
 

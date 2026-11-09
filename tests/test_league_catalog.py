@@ -79,6 +79,26 @@ class LeagueCatalogTests(unittest.TestCase):
         result=desktop_save_worker.league_catalog(rows,registry(uids))
         self.assertEqual([entry['fixture_count']for entry in result['leagues']],[30])
 
+    def test_one_entry_per_competition_prefers_active_then_upcoming(self):
+        uids=list(range(1,7))
+        finished=[fixture(home,away,season=2026,date='2026-09-01')for home in uids for away in uids if home!=away]
+        upcoming=[fixture(home,away,season=2027,date='2027-09-01')for home in uids for away in uids if home!=away]
+        active=[fixture(home,away,season=2028,date='2028-09-01')for home in uids for away in uids if home!=away]
+        result=desktop_save_worker.league_catalog(finished+upcoming,registry(uids),(),'2027-07-08')
+        self.assertEqual([entry['season']for entry in result['leagues']],[2027])
+        result=desktop_save_worker.league_catalog(finished+upcoming,registry(uids),(),'2026-09-01')
+        self.assertEqual([entry['season']for entry in result['leagues']],[2026])
+        active=[fixture(home,away,season=2028,date='2028-09-01')for home in uids for away in uids if home!=away]
+        result=desktop_save_worker.league_catalog(upcoming+active,registry(uids),(),'2028-09-01')
+        self.assertEqual([entry['season']for entry in result['leagues']],[2028])
+
+    def test_most_recent_finished_season_is_used_without_one_upcoming(self):
+        uids=list(range(1,7))
+        older=[fixture(home,away,season=2025,date='2025-09-01')for home in uids for away in uids if home!=away]
+        recent=[fixture(home,away,season=2026,date='2026-09-01')for home in uids for away in uids if home!=away]
+        result=desktop_save_worker.league_catalog(older+recent,registry(uids),(),'2027-07-08')
+        self.assertEqual([entry['season']for entry in result['leagues']],[2026])
+
     def test_league_clubs_and_competition_database_ids(self):
         uids=list(range(1,7))
         competitions=[{'id':1,'database_id':1100},{'id':2,'database_id':None}]
