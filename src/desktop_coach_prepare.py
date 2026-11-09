@@ -4,7 +4,7 @@ from pathlib import Path
 sys.path.insert(0,str(Path(__file__).with_name('vendor')))
 
 PROFILE = 'static-first-team-coaches-v3'
-LEAGUE_PROFILE = 'static-league-coaches-v2'
+LEAGUE_PROFILE = 'static-league-coaches-v3'
 FRAGMENT_DIRECTORY = 'first_team_staff_fragments'
 DIRECTORY_FILE = 'coach_directory.json'
 MANAGER_JOB = 16
@@ -56,7 +56,7 @@ def _scan_managers(source, index):
 
     def capture(db, header, layout):
         result = original_read(db, header, layout)
-        if result[0] is not None and all(result[1:]):
+        if result[0] is not None and result[1] and result[3]:
             base = header + layout.ability_base_offset + layout.entry_bytes * db[header + layout.entry_count_offset]
             start = base + layout.preferences_offset
             end = base + layout.block_40_offset + layout.block_40_count
