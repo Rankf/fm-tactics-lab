@@ -16,6 +16,14 @@ Edit possession and out-of-possession formations, team instructions and player r
 
 The screenshots show Free Simulation with the included example players. The interface is in Chinese.
 
+Save tactics: read a career save, browse any loaded league's coaches by primary and secondary preference preset, then export or add them to the away tactic pool.
+
+![Save tactics page](docs/screenshots/save-tactics.png)
+
+Away tactic pool: draw away tactics by weight, from local FMF files or the save tactic library.
+
+![Away tactic pool page](docs/screenshots/away-pool.png)
+
 ## How it works
 
 The tool loads the original match engine from your local FM27 installation. It supplies player and tactical inputs, then runs the original code for decisions, movement, passing, challenges, shooting and match rules until the match finishes naturally.

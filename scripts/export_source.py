@@ -14,7 +14,8 @@ TYPES = {'src': {'.py', '.js', '.css', '.html'},
          'native': {'.cpp', '.h', '.manifest'}}
 NATIVE_JSON = {'native/profile_metadata.json', 'native/adapter_version.json'}
 SCREENSHOTS = {'docs/screenshots/tactics.png', 'docs/screenshots/players.png',
-               'docs/screenshots/results.png'}
+               'docs/screenshots/results.png', 'docs/screenshots/save-tactics.png',
+               'docs/screenshots/away-pool.png'}
 FORBIDDEN = {'engine_compat_profile.h', 'engine_compat_profile.json'}
 
 
