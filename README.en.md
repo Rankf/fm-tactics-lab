@@ -149,3 +149,5 @@ Original engine code and a career match's complete conditions are separate consi
 For startup, path or version issues, see [Troubleshooting](docs/TROUBLESHOOTING.md). Developers can read the [build guide](docs/DEVELOPMENT.md), [contribution guide](CONTRIBUTING.md) and [third-party notices](THIRD_PARTY_NOTICES.md).
 
 The interface and system tray follow the Windows display language. Simplified Chinese and English are supported, with English as the fallback. Player names, club names, tactic data and raw logs retain their original text.
+
+The random away tactic pool currently cannot be combined with experimental tactical execution or native-generated tactics.

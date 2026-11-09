@@ -163,3 +163,5 @@ EXE 自带 Python 运行环境，玩家无需安装 Python 或编译工具。双
 遇到启动、路径或版本问题，查看[故障诊断](docs/TROUBLESHOOTING.md)。参与开发可阅读[构建文档](docs/DEVELOPMENT.md)、[贡献说明](CONTRIBUTING.md)和[第三方说明](THIRD_PARTY_NOTICES.md)。
 
 界面和系统托盘跟随 Windows 显示语言，支持简体中文和英文。其他语言回退到英文。只翻译显示文字，球员名、球队名、战术数据和原始日志保留原文。
+
+随机客队战术池目前不能与实验战术执行力或电脑生成战术同时启用。
