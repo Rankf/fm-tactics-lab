@@ -1,5 +1,15 @@
 # Changelog
 
+## v1109.2 · 2026-11-09
+
+- Follow the Windows display language in the interface and system tray, with Simplified Chinese and English support.
+- Merge the weighted away tactic pool and same-league preset library from PR #2.
+- Count one shared A/B opponent draw per seed and preserve replayed draws when resuming.
+- Select active or upcoming complete league schedules first, with a 90-day limit for preseason and postseason tables.
+- Integrate the v1109.1 save-header, named set-piece, split tactical-effectiveness and bounded large-save fixes.
+- Retain separate disk budgets for save import, preparation and batch simulation, with the actual data path in errors.
+
+
 ## 未发布
 
 - 新增存档战术页面：识别存档后按当前联赛浏览除玩家以外的教练偏好预设战术，可导出到本机文件夹或一键导入客队战术池。
