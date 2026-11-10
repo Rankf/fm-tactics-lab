@@ -23,7 +23,7 @@ function poolTable(pool,total){
 }
 function poolView(){
  const pool=poolData(),total=poolTotal(pool),uniform=pool.uniform;
- return `<div class="card"><div class="card-head pool-head"><div class="save-team-controls"><h2>客队战术池</h2><span class="tag">${pool.entries.length} 套</span><span class="tag">${pool.enabled?'随机模式已启用':'随机模式未启用'}</span></div><div class="save-team-controls"><button type="button" id="pool-import-fmf" class="button small primary">导入 FMF</button><button type="button" id="pool-import-save" class="button small">前往存档战术页面</button><input id="pool-import-file" type="file" accept=".fmf" multiple hidden></div></div><div class="card-body">${pool.entries.length?poolTable(pool,total):poolEmpty()}</div></div><div class="card"><div class="card-head"><h2>统一客队球员属性</h2></div><div class="card-body"><div class="save-team-controls"><label class="raw-toggle"><input id="pool-uniform" type="checkbox" ${uniform.enabled?'checked':''}>启用</label><label>属性值<input id="pool-uniform-value" type="number" min="1" max="20" step="1" value="${uniform.attribute_value}" ${uniform.enabled?'':'disabled'}></label></div><p class="tiny muted">开启后，每名首发在战术位置的熟练度固定为满 20，其余属性统一为设定面板值。</p></div></div>`;
+ return `<div class="card"><div class="card-head pool-head"><div class="save-team-controls"><h2>客队战术池</h2><span class="tag">${pool.entries.length} 套</span><span class="tag">${pool.enabled?'随机模式已启用':'随机模式未启用'}</span></div><div class="save-team-controls"><button type="button" id="pool-import-fmf" class="button small primary">导入 FMF</button><button type="button" id="pool-import-save" class="button small">前往存档战术页面</button><input id="pool-import-file" type="file" accept=".fmf" multiple hidden></div></div><div class="card-body">${pool.entries.length?poolTable(pool,total):poolEmpty()}</div></div><div class="card"><div class="card-head"><h2>统一客队球员属性</h2></div><div class="card-body"><div class="save-team-controls"><label class="raw-toggle"><input id="pool-uniform" type="checkbox" ${uniform.enabled?'checked':''}>启用</label><label>属性值<input id="pool-uniform-value" type="number" min="1" max="20" step="1" value="${uniform.attribute_value}" ${uniform.enabled?'':'disabled'}></label></div><p class="tiny muted">开启后，每名首发在战术位置的熟练度固定为满值，其余属性统一为设定面板值。</p></div></div>`;
 }
 async function poolImportFiles(event){
  const files=[...event.target.files];if(!files.length)return;
@@ -34,7 +34,7 @@ async function poolImportFiles(event){
   if(file.size>4*1024*1024){failures.push(file.name+'：文件超过 4 MB');continue}
   try{
    const bytes=new Uint8Array(await file.arrayBuffer());let binary='';for(let i=0;i<bytes.length;i+=8192)binary+=String.fromCharCode(...bytes.subarray(i,i+8192));
-   const result=await api('/api/pool/import-fmf',{scenario:clone(state),file_base64:btoa(binary),name:file.name.replace(/\.fmf$/i,'').trim().slice(0,60)});
+   const result=await api('/api/pool/import-fmf',{scenario:clone(state),file_base64:btoa(binary),name:file.name.replace(/\.fmf$/i,'').trim().slice(0,80)});
    state=result.scenario;save();imported++;
   }catch(e){failures.push(file.name+'：'+e.message)}
  }

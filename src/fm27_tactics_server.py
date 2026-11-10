@@ -363,6 +363,7 @@ import sys
 SAVE_LIBRARY=desktop_save_mode.SaveLibrary(sys.modules[__name__])
 
 def require_league_idle(label):
+    if SAVE_LIBRARY.real_active:raise ValueError('请等待真实AI战术生成完成')
     if SAVE_LIBRARY.active:raise ValueError('请等待存档及历史输入解析完成')
     with LOCK:
         if any(j['status']in ('queued','running')for j in JOBS.values()):raise ValueError('请等待比赛结束后再'+label)
@@ -375,6 +376,7 @@ def experiment_name(value, fallback):
 
 def create_save_job(data):
     desktop_engine.require_available(ENGINE_COMPATIBILITY)
+    if SAVE_LIBRARY.real_active: raise ValueError('请等待真实AI战术生成完成')
     if SAVE_LIBRARY.active: raise ValueError('请等待存档／对手解析完成')
     scenario=validate_scenario(data['scenario'])
     reference=validate_scenario(data['reference']) if data.get('reference') else None
@@ -897,6 +899,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(selected,str) or not selected.strip():raise ValueError('请填写游戏安装目录')
                 selected=str(Path(selected.strip()).resolve())
                 with IMPORT_LOCK,LOCK:
+                    if SAVE_LIBRARY.real_active:return self.send({'error':'真实AI战术生成中不能更换游戏目录'},409)
                     if SAVE_LIBRARY.active:raise ValueError('存档／历史输入解析中不能更换引擎')
                     if any(j['status']in ('queued','running')for j in JOBS.values()):return self.send({'error':'比赛运行中不能更换游戏目录'},409)
                     os.environ['FM27_GAME_ROOT']=selected
@@ -914,6 +917,7 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/api/phase-plan':return self.send({'scenario':phase_inputs.pack(validate_scenario(data),CATALOG)})
             if path=='/api/repair':return self.send(repair_saved_scenario(data))
             if path in('/api/run','/api/run-episodes'):
+                if SAVE_LIBRARY.real_active:raise ValueError('请等待真实AI战术生成完成后运行比赛')
                 if SAVE_LIBRARY.active:raise ValueError('请等待存档及历史输入解析完成后运行比赛')
                 event_details=data.get('event_details',True)
                 if type(event_details)is not bool:raise ValueError('事件明细开关必须为布尔值')
