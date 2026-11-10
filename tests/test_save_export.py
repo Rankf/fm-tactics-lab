@@ -579,7 +579,7 @@ class RealGenerationTests(unittest.TestCase):
             self.assertEqual(entry['report']['source'],'original_engine_generation')
             self.assertIn(entry['report']['venue'],('H','A'))
         notice=(Path(result['directory'])/'导出说明.txt').read_text(encoding='utf8')
-        self.assertIn('对手主场、对手客场',notice)
+        self.assertIn('对手主场、对手客场',notice);self.assertIn('career.fm',notice);self.assertNotIn('C:/saves',notice)
 
     def test_pool_import_uses_generated_library(self):
         started=self.patches()
@@ -657,6 +657,7 @@ class RealGenerationTests(unittest.TestCase):
         self.assertEqual(result['skipped'],[])
         notice=(Path(result['directory'])/'导出说明.txt').read_text(encoding='utf8')
         self.assertIn('真实AI战术 2 套',notice);self.assertIn('教练偏好预设 2 套',notice)
+        self.assertIn('career.fm',notice);self.assertNotIn('C:/saves',notice)
 
     def test_export_and_pool_import_fall_back_when_library_is_empty(self):
         failures=[{'club_uid':2,'club':'乙队','venue':'A','error':'主教练档案超出范围'}]

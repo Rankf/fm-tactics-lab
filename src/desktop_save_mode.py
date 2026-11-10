@@ -786,14 +786,14 @@ class SaveLibrary:
         if not rows:
             detail='；'.join(item['error']for item in failures[:3])
             raise ValueError('所选联赛没有可导出的战术'+(('：'+detail)if detail else''))
-        source=self._source(key,folder,data)
+        source=self._source(key,folder,data);display=desktop_save_export._source(source)
         real_count=built.count('real_ai');preset_count=built.count('coach_preset')
         if real_count and preset_count:
             profile=desktop_save_export.MIXED_PROFILE;stem='FM27联赛战术'
-            notice=desktop_save_export.mixed_notice(source,len(rows),real_count,preset_count)
+            notice=desktop_save_export.mixed_notice(display,len(rows),real_count,preset_count)
         elif real_count:
             profile=desktop_save_export.REAL_PROFILE;stem='FM27真实AI战术'
-            notice=desktop_save_export.real_notice(source,len(rows))
+            notice=desktop_save_export.real_notice(display,len(rows))
         else:
             profile=desktop_save_export.PROFILE;stem=None;notice=None
         result=desktop_save_export.write(str(target),source,rows,stem=stem,notice=notice,profile=profile)

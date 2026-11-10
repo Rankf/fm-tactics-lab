@@ -81,8 +81,8 @@ def _atomic(path,payload):
 
 def _source(value):
     value=value if isinstance(value,dict) else {}
-    source=value.get('source')
-    name=Path(source).name if isinstance(source,str) and source else None
+    source=value.get('source');name=value.get('source_name')
+    if not name and isinstance(source,str) and source:name=Path(source).name
     return {'save_id':value.get('save_id'),'source_name':name,'source_sha256':value.get('source_sha256'),
             'date':value.get('date'),'build':value.get('build')}
 
