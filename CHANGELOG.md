@@ -1,5 +1,14 @@
 # Changelog
 
+## v1111.2 · 2026-11-11
+
+- Move random opponent tactics into the match run controls and remove the standalone away-pool sidebar page.
+- Enable the option to open candidate import, weights and uniform-attribute settings; closing the settings retains the enabled state, while disabling randomization retains candidates and weights.
+- Rename save-library import to Add random candidates, without enabling randomization automatically.
+- Keep empty-candidate setup local and prevent starting a random match until candidates are added.
+- Preserve the existing pool format, per-seed draws and tactical-execution integration; update Chinese and English copy.
+
+
 ## v1111.1 · 2026-11-11
 
 - Integrate PR #3 with the v1111 official FM27 27.0.1+2494687 adapter.

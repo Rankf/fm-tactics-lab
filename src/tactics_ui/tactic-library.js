@@ -86,7 +86,7 @@ function libraryReportBody(report){
  const bar=own&&reading?`<div class="real-progress" role="status"><div class="real-progress-track"><div class="real-progress-bar" style="width:${pct}%"></div></div><p class="tiny muted">${esc(progress.stage||'正在生成真实AI战术')}</p></div>`:'';
  const hint=own?'<p class="tiny muted">真实战术对每个对手生成对手主场、对手客场两套；由本机原版引擎准备，首次较慢。这是受控预览上下文输出，正式比赛由游戏内 AI 重新生成，本工具不逐场重算。</p>':'';
  const realButton=own?`<button id="library-real-all" class="button" ${reading?'disabled':''}>${report.real?.variant_count?'补齐缺失的真实战术':'生成全部真实战术'}</button>`:'';
- const controls=`<div class="save-team-controls"><label>导出目录<input id="library-directory" value="${esc(libraryDirectory())}" placeholder="选择本机文件夹"></label><button id="library-folder" class="button">选择目录…</button><button id="library-export" class="button" ${reading?'disabled':''}>导出全部战术</button><button id="library-pool" class="button primary" ${reading?'disabled':''}>导入客队战术池</button>${realButton}</div>`;
+ const controls=`<div class="save-team-controls"><label>导出目录<input id="library-directory" value="${esc(libraryDirectory())}" placeholder="选择本机文件夹"></label><button id="library-folder" class="button">选择目录…</button><button id="library-export" class="button" ${reading?'disabled':''}>导出全部战术</button><button id="library-pool" class="button primary" ${reading?'disabled':''}>加入随机候选</button>${realButton}</div>`;
  return `${summary}${realFailures}${bar}${table}${details}${hint}${controls}${libraryExportResult()}`;
 }
 function libraryLeagueCard(){
@@ -211,7 +211,7 @@ async function exportLibrary(){
   localStorage.setItem('fm27-export-directory',directory);
   libraryExport=result;libraryRefresh();
   const skipped=result.skipped?.length||0;
-  toast(`${result.source==='real_ai'?'已导出真实AI战术':result.source==='mixed'?'已导出真实AI战术与预设':'已导出'} ${result.files?.length||0} 个文件到 ${result.directory||directory}${skipped?'，遗漏 '+skipped+' 套':''}`);
+  toast(`${result.source==='real_ai'?'已导出真实AI战术':result.source==='mixed'?'已导出真实AI战术与预设':'已导出'} ${result.files?.length||0} 个文件到 ${result.directory||directory}${skipped?'，遗漏 '+skipped+' 套':''}${result.scenario.away_tactic_pool?.enabled?'':'；需要时勾选底部的随机对手战术'}`);
  }catch(e){toast('导出失败：'+e.message);if($('#library-export')){$('#library-export').disabled=false;$('#library-export').textContent='导出全部战术'}}
 }
 async function generateRealTeam(button){
@@ -258,12 +258,13 @@ async function importLibraryPool(){
  button.disabled=true;button.textContent='正在导入…';
  try{
   const result=await libraryRequest('/api/save/league-pool',{id:librarySave.id,league:libraryLeague,scenario:clone(state)},stage=>{if(button)button.textContent=stage||'正在导入…'});
-  if(result.status==='error')throw Error(result.stage||'导入客队战术池失败');
+  if(result.status==='error')throw Error(result.stage||'加入随机候选失败');
   state=result.scenario;save();
   const skipped=result.skipped?.length||0;
-  toast(`已导入 ${result.imported?.length||0} 套${result.source==='real_ai'?'真实AI战术':result.source==='mixed'?'真实AI战术与预设':'战术'}${skipped?'，遗漏 '+skipped+' 套':''}`);
-  view='pool';render();
- }catch(e){toast('导入客队战术池失败：'+e.message);if($('#library-pool')){$('#library-pool').disabled=false;$('#library-pool').textContent='导入客队战术池'}}
+  toast(`已导入 ${result.imported?.length||0} 套${result.source==='real_ai'?'真实AI战术':result.source==='mixed'?'真实AI战术与预设':'战术'}${skipped?'，遗漏 '+skipped+' 套':''}${result.scenario.away_tactic_pool?.enabled?'':'；需要时勾选底部的随机对手战术'}`);
+  randomSelectionPending=false;randomOptionsOpen=false;
+  view='tactics';render();
+ }catch(e){toast('加入随机候选失败：'+e.message);if($('#library-pool')){$('#library-pool').disabled=false;$('#library-pool').textContent='加入随机候选'}}
 }
 const libraryBindPrevious=bind;
 bind=function(){libraryBindPrevious();bindLibrary()};

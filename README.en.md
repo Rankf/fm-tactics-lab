@@ -48,7 +48,7 @@ Each batch uses a sequence of random seeds. When comparing a saved reference wit
 
 ## Download and launch
 
-The current source version is **v1111.1**. Download published desktop builds from [GitHub Releases](https://github.com/lqf0624/fm-tactics-lab/releases). Exit the previous app from its tray menu before launching an update.
+The current source version is **v1111.2**. Download published desktop builds from [GitHub Releases](https://github.com/lqf0624/fm-tactics-lab/releases). Exit the previous app from its tray menu before launching an update.
 
 Install FM27, open Steam and sign in to the account that owns the game, then launch the EXE. The tool looks for your installation automatically. You can also select the game root containing `fm_Data` and `shared` in the engine settings at the top.
 
@@ -87,7 +87,7 @@ Open **战术板** (Tactics Board):
 - Drag shirts to swap players while keeping roles, duties and instructions attached to their positions. Moving to an empty position prompts for confirmation if any settings need to change.
 - Adjust mentality, passing, pressing and other team instructions.
 - Configure or import set-piece routines separately in **定位球与职责** (Set Pieces and Responsibilities).
-- **Away tactic pool**: import local FMF tactics on the pool page, or add the selected league's primary/secondary preference presets from **存档战术** in one click. With random mode enabled in the bottom bar, each match draws one away tactic by weight.
+- **Random opponent tactics**: enable the option beside Run matches to expand FMF import, candidates and weights. Save tactics can add candidates without enabling randomization. Disabling this option retains candidates and weights and uses the currently selected opponent tactic.
 
 Imported tactics remain editable. When the away tactic pool is enabled, every away player's ability attributes can be unified to a configurable interface value (15 by default), while starters receive maximum positional familiarity 20 for the drawn tactic's positions. Draws are derived from the task seed and reproduce within the same experiment.
 
@@ -156,7 +156,7 @@ The random away tactic pool can be combined with experimental tactical execution
 
 ## Version and project information
 
-The current source version is **v1111.1**, for Windows x64. The adapter reference build is `27.0.1+2494687`. Tool code is licensed under MIT; the engine and game resources come from your local installation.
+The current source version is **v1111.2**, for Windows x64. The adapter reference build is `27.0.1+2494687`. Tool code is licensed under MIT; the engine and game resources come from your local installation.
 
 Original engine code and a career match's complete conditions are separate considerations. This tool standardizes starting states; inputs, random states and in-match interventions affect results. Evidence and validation scope are described in [Simulation Fidelity](docs/SIMULATION_FIDELITY.md).
 
@@ -164,6 +164,6 @@ For startup, path or version issues, see [Troubleshooting](docs/TROUBLESHOOTING.
 
 The interface and system tray follow the Windows display language. Simplified Chinese and English are supported, with English as the fallback. Player names, club names, tactic data and raw logs retain their original text.
 
-## v1111.1 compatibility
+## v1111.2 compatibility
 
 Supports the official FM27 27.0.1+2494687 engine and combines PR #3 with the v1111 adapter and save-reader fixes. AI plans use current squads, seed 0 and the default player-side template in a controlled preview; pool entries remain fixed plans.
