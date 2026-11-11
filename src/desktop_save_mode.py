@@ -1108,7 +1108,7 @@ class SaveLibrary:
         team['setpieces']['role_priorities']={k:[remap[i]for i in values if i in remap]for k,values in team['setpieces']['role_priorities'].items()}
         return app.validate_scenario(scenario)
 
-    OPPONENT_PROFILE='coach-preference-presets-v19'
+    OPPONENT_PROFILE='coach-preference-presets-v20'
 
     def opponent_report(self, path):
         if not path.exists():return None

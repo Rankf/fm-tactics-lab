@@ -1,5 +1,17 @@
 # Changelog
 
+## v1111.1 · 2026-11-11
+
+- Integrate PR #3 with the v1111 official FM27 27.0.1+2494687 adapter.
+- Browse loaded leagues and read league/country names from local game data.
+- Generate original-engine AI plans for opponents in the managed league, with club-home/club-away contexts, progress, caching and retry.
+- Export verified FMF plans and import mixed generated/preset plans into the away pool without silently dropping teams.
+- Invalidate derived plans when engine identity changes and preserve missing-coach restrictions.
+- Retain v1111 save-layout, tactic auxiliary-map, TEAM-count discovery and tactical-execution compatibility fixes.
+- AI generation uses current squads, fixed seed 0 and the default player-side template; imported pool plans are static.
+- Validation on a 27.0.1 Manchester United save: 19 opponents; 36 generated plans plus one fallback preset exported/imported; one unavailable secondary preset explicitly reported. HIGHWAY STAR FMF round-trip passed. Three complete native matches passed, including one using the final bundled runtime. Automated checks: 145 passed, one Windows symlink skip; i18n and EXE self-test passed.
+
+
 ## v1109.3 · 2026-11-09
 
 - Allow random away tactic pools with experimental tactical execution.
