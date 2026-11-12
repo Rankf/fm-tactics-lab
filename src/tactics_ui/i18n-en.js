@@ -1358,5 +1358,11 @@ window.FM27English = {
  "每场从候选列表按权重抽取对手战术": "draws an opponent tactic by weight for each match",
  "关闭后使用当前选定的对手战术": "when disabled, use the currently selected opponent tactic",
  "候选战术": "Tactic candidates",
- "请先添加随机候选战术": "Add random tactic candidates first"
+ "请先添加随机候选战术": "Add random tactic candidates first",
+ "建议": "Recommended",
+ "可自行设置": "Set manually",
+ "路": "workers",
+ "高并行会增加内存和处理器占用": "higher parallelism increases memory and CPU usage",
+ "并行数高于推荐值": "Worker count exceeds the recommendation",
+ "请留意内存和处理器占用": "monitor memory and CPU usage"
 };

@@ -22,7 +22,6 @@ from urllib.parse import urlparse,parse_qs
 from fm27_simulator import inspect_log
 from fm27_batch import BatchRunner, worker_limits, own_child_processes
 from desktop_warm_batch import DesktopWarmRunner, inspect_saved_run
-BATCH_LIMITS=worker_limits()
 import fm27_setpieces as setpieces
 import fm27_phase_inputs as phase_inputs
 import fm27_profiles as profiles
@@ -393,7 +392,7 @@ def create_save_job(data):
     require_space(RUNS,additional_bytes=len(selected)*count*(2 if reference else 1)*3*1024**2)
     first=integer(data.get('first_seed'),0,0xffffffff,'起始种子')
     if first+count//2-1>0xffffffff: raise ValueError('种子超出范围')
-    workers=integer(data.get('workers',1),1,BATCH_LIMITS['maximum'],'并行数')
+    workers=integer(data.get('workers',1),1,worker_limits()['maximum'],'并行数')
     event_details=data.get('event_details',True)
     if type(event_details)is not bool: raise ValueError('事件明细开关无效')
     with LOCK:
@@ -634,9 +633,15 @@ def execute(job,scenarios,seeds):
     runner=BatchRunner(ROOT,job['workers'],retries=1)if job.get('episode_settings')else DesktopWarmRunner(ROOT,job['workers'],retries=0)
     execution_settings = {label:s['experimental_execution'] for label,s in scenarios if 'experimental_execution' in s}
     if execution_settings:
-        runner.jobs_per_session = 1
-        job.update(runtime_mode='isolated_pool_execution_experiment' if job.get('_pool_variants') else 'isolated_execution_experiment', jobs_per_native_session=1,
-                   experimental_execution=execution_settings)
+        if runner.counted_sessions:
+            job.update(runtime_mode='reused_pool_execution_worker' if job.get('_pool_variants') else 'reused_execution_worker',
+                       jobs_per_native_session=None,session_scope='remaining_batch_lane',experimental_execution=execution_settings)
+        else:
+            runner.jobs_per_session=1
+            job.update(runtime_mode='isolated_pool_execution_experiment' if job.get('_pool_variants') else 'isolated_execution_experiment',
+                       jobs_per_native_session=1,experimental_execution=execution_settings)
+    elif isinstance(runner,DesktopWarmRunner)and runner.counted_sessions:
+        job.update(jobs_per_native_session=None,session_scope='remaining_batch_lane')
     with LOCK:
         job['_runner']=runner;job['status']='running';job['started']=time.time()
         if job.get('_cancel'):runner.cancel()
@@ -778,7 +783,7 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/api/catalog':return self.send(CATALOG)
         if path=='/api/defaults':return self.send(DEFAULT)
         if path=='/api/phase-defaults':return self.send(phase_inputs.pack(DEFAULT,CATALOG))
-        if path=='/api/status':return self.send({'engine':'original_native','engine_compatibility':ENGINE_COMPATIBILITY,'server_pid':os.getpid(),'application_version':'v1111.2','fmf_version_validation':'original_game_reader','fixture_me_version':'26.8.0.0','independent':True,'team_groups':len(GROUPS),'team_options':sum(len(g['options'])for g in GROUPS.values()),'player_groups':17,'roles':79,'batch':{'max_matches_per_variant':10000,**BATCH_LIMITS,'isolation':'bounded_reused_native_sessions','jobs_per_native_session':64,'postprocess_workers':2,'whole_match_automatic_retries':0}})
+        if path=='/api/status':return self.send({'engine':'original_native','engine_compatibility':ENGINE_COMPATIBILITY,'server_pid':os.getpid(),'application_version':'v1111.3','fmf_version_validation':'original_game_reader','fixture_me_version':'26.8.0.0','independent':True,'team_groups':len(GROUPS),'team_options':sum(len(g['options'])for g in GROUPS.values()),'player_groups':17,'roles':79,'batch':{'max_matches_per_variant':10000,**worker_limits(),'isolation':'bounded_reused_native_sessions','jobs_per_native_session':None,'session_policy':'remaining_batch_lane_when_supported','postprocess_workers':2,'whole_match_automatic_retries':0}})
         if path=='/api/save/status':
             query=parse_qs(urlparse(self.path).query)
             try: return self.send(SAVE_LIBRARY.status(query.get('id',[None])[0]))
@@ -941,7 +946,7 @@ class Handler(BaseHTTPRequestHandler):
                 seeds=data['seeds']
                 if not isinstance(seeds,list)or not 1<=len(seeds)<=10000 or len(set(seeds))!=len(seeds):raise ValueError('需要1–10000个不重复种子')
                 seeds=[integer(s,0,0xffffffff,'随机种子')for s in seeds]
-                workers=integer(data.get('workers',BATCH_LIMITS['recommended']),1,BATCH_LIMITS['maximum'],'并行数')
+                workers=integer(data.get('workers',worker_limits()['recommended']),1,worker_limits()['maximum'],'并行数')
                 variants=[('A',reference),('B',scenario)]if reference else[('B',scenario)]
                 pool=scenario.get('away_tactic_pool')if isinstance(scenario.get('away_tactic_pool'),dict)else None
                 if pool is None and reference:pool=reference.get('away_tactic_pool')if isinstance(reference.get('away_tactic_pool'),dict)else None
@@ -991,7 +996,7 @@ class Handler(BaseHTTPRequestHandler):
                     JOBS[key]=job;persist(job);POOL.submit(execute,job,variants,seeds)
                     return self.send({'id':key},202)
             if path=='/api/resume':
-                workers=integer(data.get('workers',BATCH_LIMITS['recommended']),1,BATCH_LIMITS['maximum'],'并行数')
+                workers=integer(data.get('workers',worker_limits()['recommended']),1,worker_limits()['maximum'],'并行数')
                 with LOCK:
                     desktop_engine.require_available(ENGINE_COMPATIBILITY)
                     if any(j['status']in ('queued','running')for j in JOBS.values()):return self.send({'error':'已有比赛运行中'},409)

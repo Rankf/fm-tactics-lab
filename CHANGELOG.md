@@ -1,5 +1,15 @@
 # Changelog
 
+## v1111.3 · 2026-11-12
+
+- Keep each supported native worker alive until its assigned batch lane finishes instead of recycling after 64 matches. Release the original match, recording references, event observer and thread context after every match.
+- Install execution trampolines once per process and reset policies, team bindings, CA receipts and counters for every match. Execution and random-pool A/B batches now reuse workers too.
+- Negotiate the counted-session protocol by host identity; older hosts retain the previously verified 64-match/isolated-execution behavior. Keep per-match progress timeouts, cancellation and periodic disk-space checks.
+- Let users enter 1–256 concurrent workers directly and preserve their choice. CPU and free-memory estimates only set the default recommendation (up to four); they do not cap manual choices. Counts above the recommendation display a nonblocking resource warning. Higher counts than eight have not been benchmarked.
+- Validation: 160 matches in one process matched cold-worker scores, statistics and execution receipts; mixed execution transitions matched full events; three-preset execution A/B cancel/restart/resume passed. A fixed 48-match quick-mode trial took 51.687 / 34.859 / 26.468 seconds at 4 / 6 / 8 workers, with identical results and about 332 MiB peak private memory per native process. These are local measurements, not universal speed guarantees.
+- Same-process multi-threaded simulation remains a separate research prototype and is not exposed by this release.
+
+
 ## v1111.2 · 2026-11-11
 
 - Move random opponent tactics into the match run controls and remove the standalone away-pool sidebar page.
