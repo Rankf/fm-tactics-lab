@@ -1,6 +1,6 @@
 # Changelog
 
-## v1111.3 · 2026-11-12
+## v1112 · 2026-11-12
 
 - Keep each supported native worker alive until its assigned batch lane finishes instead of recycling after 64 matches. Release the original match, recording references, event observer and thread context after every match.
 - Install execution trampolines once per process and reset policies, team bindings, CA receipts and counters for every match. Execution and random-pool A/B batches now reuse workers too.
