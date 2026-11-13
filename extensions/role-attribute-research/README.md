@@ -99,6 +99,6 @@ python extensions/role-attribute-research/build.py --prepare-only --verify
 python scripts/acceptance_epic.py --platform steam --exe "生成的EXE完整路径" --game-root "游戏安装目录"
 ```
 
-此前已完成 183 项 Python 检查（179 通过、4 跳过）、报告和语言检查；新编译 Steam 宿主已完成一场完整比赛、44 场两阶段实验、两个阶段的取消续跑，以及运行中正常/强制退出。此 PR 另对干净基线上的独立目录构建流程执行验证，结果见提交说明。
+已从本分支干净 ZIP（没有 `.git`）完成完整构建：4 项扩展构建器检查通过，183 项功能检查中 179 项通过、4 项跳过，报告和语言检查通过。下载副本生成的 Steam EXE 已完成一场完整比赛、44 场两阶段实验、两个阶段的取消续跑，以及运行中正常/强制退出。详见 [验证记录](VALIDATION.md)。
 
 推荐反映特定球员、战术、对手和属性区间下的实验变化，不是通用属性权重，也不保证复现职业生涯比赛。标准属性档位仍是同一球员，角色专项目前是球队统计。
