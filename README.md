@@ -57,6 +57,8 @@
 
 已验证可导入该热修构建重新保存的曼联档，并开启战术执行力完成英超 19 个对手的 38 场原生比赛。启动失败时会提示诊断日志的位置。
 
+Epic 版提供[独立测试包](https://github.com/lqf0624/fm-tactics-lab/releases/tag/v1113-pr13-epic-test)。从源码构建时，给原生宿主和 EXE 的构建命令都加上 `--platform epic`，并使用该测试版说明里对应的 Epic DLL。Steam 是默认构建。
+
 ## 下载与启动
 
 当前源码版本为 **v1113.1**。桌面版下载见 [GitHub Releases](https://github.com/lqf0624/fm-tactics-lab/releases)，从托盘退出旧版后再启动新版。

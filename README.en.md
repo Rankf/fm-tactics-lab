@@ -166,6 +166,8 @@ The interface and system tray follow the Windows display language. Simplified Ch
 
 ## v1113.1 compatibility
 
+[The Epic test build](https://github.com/lqf0624/fm-tactics-lab/releases/tag/v1113-pr13-epic-test) targets Epic FM27 27.0.1. For source builds, pass `--platform epic` to both native and EXE build commands and use the matching Epic DLL. Steam remains the default.
+
 Supports the November 12 Steam hotfix (`27.0.1+2503222`). Start a new batch with this build. To resume an unfinished batch, retain the original tool and game build used for that batch.
 
 A Manchester United save re-saved on this build was imported and used for 38 native matches with tactical execution enabled. Startup failures now report the diagnostic log path.

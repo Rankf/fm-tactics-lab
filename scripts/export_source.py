@@ -12,7 +12,8 @@ TOP = {'README.md', 'README.en.md', 'LICENSE', 'THIRD_PARTY_NOTICES.md', 'CONTRI
 TYPES = {'src': {'.py', '.js', '.css', '.html'},
          'scripts': {'.py'}, 'tests': {'.py', '.cjs'}, 'docs': {'.md'},
          'native': {'.cpp', '.h', '.manifest'}}
-NATIVE_JSON = {'native/profile_metadata.json', 'native/adapter_version.json'}
+NATIVE_JSON = {'native/profile_metadata.json', 'native/adapter_version.json',
+               'native/epic_profile_metadata.json', 'native/epic_adapter_version.json'}
 SCREENSHOTS = {'docs/screenshots/tactics.png', 'docs/screenshots/players.png',
                'docs/screenshots/results.png', 'docs/screenshots/save-tactics.png',
                'docs/screenshots/save-tactics-progress.png', 'docs/screenshots/away-pool.png'}
@@ -51,9 +52,10 @@ def validate(root=ROOT):
             raise ValueError('Potential credential found: ' + str(path.relative_to(root)))
         if re.search(r'[0-9a-fA-F]{512,}', text):
             raise ValueError('Unexpected long hexadecimal dump: ' + str(path.relative_to(root)))
-    profile = json.loads((root / 'native/profile_metadata.json').read_text(encoding='utf8'))
-    if any('hex' in row for row in profile['ranges']):
-        raise ValueError('Original game function bytes must not be published')
+    for name in ('profile_metadata.json', 'epic_profile_metadata.json'):
+        profile = json.loads((root / 'native' / name).read_text(encoding='utf8'))
+        if any('hex' in row for row in profile['ranges']):
+            raise ValueError('Original game function bytes must not be published')
     return paths
 
 
