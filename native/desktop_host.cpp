@@ -991,7 +991,7 @@ static int child(bool run_match){
     fprintf(log_file,"{\"event\":\"runtime_dependencies_checked\",\"fm_exe_unity_player_game_assembly_absent\":%s}\n",game_runtime_absent?"true":"false");fflush(log_file);
     if(!game_runtime_absent)return 100;
     if(policy_audit)return audit_policies();
-    auto flag=(volatile unsigned int*)((unsigned char*)module+0x1718f818);
+    auto flag=(volatile unsigned int*)((unsigned char*)module+0x613e244);
     for(unsigned i=0;i<100;i++){
         if(*flag==0){
             desktop_check_cancel();

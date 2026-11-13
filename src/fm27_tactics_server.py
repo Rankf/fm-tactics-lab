@@ -44,7 +44,7 @@ ENGINE_COMPATIBILITY = desktop_engine.initialize(ROOT)
 ENGINE_DLL_SHA256 = ENGINE_COMPATIBILITY['actual_dll_sha256']
 EXECUTION_EXPERIMENT_DLLS = {
     '252ff8fb5b7a4a5a5464db6ba632e309eef9b6e65ffa992ae20575a189e66c6a',
-    'f79b0a3413dd0e3f461b0afbc3ff397003f4a26d7525a30717428de6a8b91196',
+    '8c6971ce0b1c8afe6529ea3f46205a5175aea988a97d7421a980da42e23fe340',
 }
 EXECUTION_COMPONENTS = ('understanding', 'buy_in', 'opposition', 'ability')
 CATALOG = json.loads((WEB/'catalog.json').read_text(encoding='utf8'))
@@ -783,7 +783,7 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/api/catalog':return self.send(CATALOG)
         if path=='/api/defaults':return self.send(DEFAULT)
         if path=='/api/phase-defaults':return self.send(phase_inputs.pack(DEFAULT,CATALOG))
-        if path=='/api/status':return self.send({'engine':'original_native','engine_compatibility':ENGINE_COMPATIBILITY,'server_pid':os.getpid(),'application_version':'v1112','fmf_version_validation':'original_game_reader','fixture_me_version':'26.8.0.0','independent':True,'team_groups':len(GROUPS),'team_options':sum(len(g['options'])for g in GROUPS.values()),'player_groups':17,'roles':79,'batch':{'max_matches_per_variant':10000,**worker_limits(),'isolation':'bounded_reused_native_sessions','jobs_per_native_session':None,'session_policy':'remaining_batch_lane_when_supported','postprocess_workers':2,'whole_match_automatic_retries':0}})
+        if path=='/api/status':return self.send({'engine':'original_native','engine_compatibility':ENGINE_COMPATIBILITY,'server_pid':os.getpid(),'application_version':'v1113','fmf_version_validation':'original_game_reader','fixture_me_version':'26.8.0.0','independent':True,'team_groups':len(GROUPS),'team_options':sum(len(g['options'])for g in GROUPS.values()),'player_groups':17,'roles':79,'batch':{'max_matches_per_variant':10000,**worker_limits(),'isolation':'bounded_reused_native_sessions','jobs_per_native_session':None,'session_policy':'remaining_batch_lane_when_supported','postprocess_workers':2,'whole_match_automatic_retries':0}})
         if path=='/api/save/status':
             query=parse_qs(urlparse(self.path).query)
             try: return self.send(SAVE_LIBRARY.status(query.get('id',[None])[0]))

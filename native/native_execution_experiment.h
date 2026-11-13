@@ -124,7 +124,7 @@ static void execution_install(unsigned char* match){
   }else if(c[Understanding]<0||c[BuyIn]<0||c[Opposition]<0)desktop_finish_and_exit(244);
  }
  if(strcmp(native_image_sha256,
-    "f79b0a3413dd0e3f461b0afbc3ff397003f4a26d7525a30717428de6a8b91196"))desktop_finish_and_exit(244);
+    "8c6971ce0b1c8afe6529ea3f46205a5175aea988a97d7421a980da42e23fe340"))desktop_finish_and_exit(244);
  execution_active=true;
  for(unsigned side=0;side<2;side++)execution_teams[side]=*(unsigned char**)(match+0x15380+8*side);
  constexpr unsigned version=0x1b000000u;

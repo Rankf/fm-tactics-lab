@@ -1,5 +1,10 @@
 # Changelog
 
+## v1113 · 2026-11-13
+
+- Adapt the original-engine host to the FM27 Steam hotfix `27.0.1+2503222`, including its updated initialization address and compatibility checks.
+- Validate the packaged build with complete native matches, tactical execution, worker reuse and FMF import/export.
+
 ## v1112 · 2026-11-12
 
 - Keep each supported native worker alive until its assigned batch lane finishes instead of recycling after 64 matches. Release the original match, recording references, event observer and thread context after every match.

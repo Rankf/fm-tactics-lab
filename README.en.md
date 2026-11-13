@@ -48,7 +48,7 @@ Each batch uses a sequence of random seeds. When comparing a saved reference wit
 
 ## Download and launch
 
-The current source version is **v1112**. Download published desktop builds from [GitHub Releases](https://github.com/lqf0624/fm-tactics-lab/releases). Exit the previous app from its tray menu before launching an update.
+The current source version is **v1113**. Download published desktop builds from [GitHub Releases](https://github.com/lqf0624/fm-tactics-lab/releases). Exit the previous app from its tray menu before launching an update.
 
 Install FM27, open Steam and sign in to the account that owns the game, then launch the EXE. The tool looks for your installation automatically. You can also select the game root containing `fm_Data` and `shared` in the engine settings at the top.
 
@@ -156,7 +156,7 @@ The random away tactic pool can be combined with experimental tactical execution
 
 ## Version and project information
 
-The current source version is **v1112**, for Windows x64. The adapter reference build is `27.0.1+2494687`. Tool code is licensed under MIT; the engine and game resources come from your local installation.
+The current source version is **v1113**, for Windows x64. The adapter reference build is `27.0.1+2503222`. Tool code is licensed under MIT; the engine and game resources come from your local installation.
 
 Original engine code and a career match's complete conditions are separate considerations. This tool standardizes starting states; inputs, random states and in-match interventions affect results. Evidence and validation scope are described in [Simulation Fidelity](docs/SIMULATION_FIDELITY.md).
 
@@ -164,8 +164,6 @@ For startup, path or version issues, see [Troubleshooting](docs/TROUBLESHOOTING.
 
 The interface and system tray follow the Windows display language. Simplified Chinese and English are supported, with English as the fallback. Player names, club names, tactic data and raw logs retain their original text.
 
-## v1112 compatibility
+## v1113 compatibility
 
-This release focuses on batch performance. Each supported native worker remains alive until its assigned batch finishes instead of restarting every 64 matches, including execution experiments and random-opponent A/B batches. Match objects are released and execution inputs are reset after every match. Save parsing, league opponents, tactic import/export and official FM27 27.0.1+2494687 support remain available. Start a new experiment after upgrading; use the previous version to resume unfinished older jobs.
-
-Parallel workers can be entered manually from 1 to 256; hardware estimates only set the default recommendation. The last choice is saved. Counts above eight have not been benchmarked.
+Supports the November 12 Steam hotfix (`27.0.1+2503222`). Start a new batch with this build. To resume an unfinished batch, retain the original tool and game build used for that batch.
