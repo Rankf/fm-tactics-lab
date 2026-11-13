@@ -11,15 +11,15 @@ using System.Text;
 using System.Threading;
 using System.Windows.Forms;
 
-[assembly: AssemblyVersion("1.113.0.0")]
-[assembly: AssemblyFileVersion("1.113.0.0")]
-[assembly: AssemblyInformationalVersion("v1113")]
+[assembly: AssemblyVersion("1.113.0.1")]
+[assembly: AssemblyFileVersion("1.113.0.1")]
+[assembly: AssemblyInformationalVersion("v1113.1")]
 
 internal static class Program {
     static string L(string zh,string en){return System.Globalization.CultureInfo.CurrentUICulture.TwoLetterISOLanguageName=="zh"?zh:en;}
     static Process server;
     static StreamWriter output,error;
-    static string dataRoot,url,gameRoot;
+    static string dataRoot,url,gameRoot,serverErrorPath;
     static string GetArg(string[] args,string key,string fallback=null){for(int i=0;i+1<args.Length;i++)if(args[i]==key)return args[i+1];return fallback;}
     static bool Has(string[] args,string key){return Array.IndexOf(args,key)>=0;}
     static string Quote(string value){return "\""+value.Replace("\"", "\\\"")+"\"";}
@@ -58,15 +58,34 @@ internal static class Program {
     static string ReadUrl(string address){var request=(HttpWebRequest)WebRequest.Create(address);request.Timeout=1200;request.Proxy=null;using(var response=request.GetResponse())using(var reader=new StreamReader(response.GetResponseStream(),Encoding.UTF8))return reader.ReadToEnd();}
     static int ChoosePort(int requested){try{var listener=new TcpListener(IPAddress.Loopback,requested);listener.Start();int port=((IPEndPoint)listener.LocalEndpoint).Port;listener.Stop();return port;}catch(SocketException){var listener=new TcpListener(IPAddress.Loopback,0);listener.Start();int port=((IPEndPoint)listener.LocalEndpoint).Port;listener.Stop();return port;}}
     static void StartServer(string release,string engine,int port){
-        Directory.CreateDirectory(Path.Combine(dataRoot,"logs"));string stamp=DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");output=new StreamWriter(Path.Combine(dataRoot,"logs",stamp+".stdout.log"),false,Encoding.UTF8);error=new StreamWriter(Path.Combine(dataRoot,"logs",stamp+".stderr.log"),false,Encoding.UTF8);output.AutoFlush=error.AutoFlush=true;
-        var info=new ProcessStartInfo(Path.Combine(release,"python","python.exe"),Quote(Path.Combine(release,"source","desktop_server.py"))+" --port "+port){UseShellExecute=false,CreateNoWindow=true,WorkingDirectory=engine,RedirectStandardOutput=true,RedirectStandardError=true};
+        string logs=Path.Combine(dataRoot,"logs");
+        Directory.CreateDirectory(logs);
+        string stamp=DateTime.Now.ToString("yyyyMMdd_HHmmss_fff");
+        serverErrorPath=Path.Combine(logs,stamp+".stderr.log");
+        output=new StreamWriter(Path.Combine(logs,stamp+".stdout.log"),false,Encoding.UTF8);
+        error=new StreamWriter(serverErrorPath,false,Encoding.UTF8);
+        output.AutoFlush=error.AutoFlush=true;
+        var info=new ProcessStartInfo(Path.Combine(release,"python","python.exe"),"-E -s -B -u -X utf8 -X faulthandler "+Quote(Path.Combine(release,"source","desktop_server.py"))+" --port "+port){UseShellExecute=false,CreateNoWindow=true,WorkingDirectory=engine,RedirectStandardOutput=true,RedirectStandardError=true,StandardOutputEncoding=Encoding.UTF8,StandardErrorEncoding=Encoding.UTF8};
+        error.WriteLine("Python: "+info.FileName);
+        error.WriteLine("Working directory: "+engine);
+        error.WriteLine("Game directory: "+gameRoot);
         info.EnvironmentVariables["FM27_ENGINE_ROOT"]=engine;info.EnvironmentVariables["FM27_DESKTOP_DATA"]=dataRoot;info.EnvironmentVariables["PYTHONUTF8"]="1";info.EnvironmentVariables["PYTHONDONTWRITEBYTECODE"]="1";
         foreach(System.Collections.DictionaryEntry item in Environment.GetEnvironmentVariables())if(((string)item.Key).StartsWith("FM27_")&&(string)item.Key!="FM27_ENGINE_ROOT"&&(string)item.Key!="FM27_DESKTOP_DATA")info.EnvironmentVariables.Remove((string)item.Key);
         info.EnvironmentVariables["FM27_GAME_ROOT"]=gameRoot;
         info.EnvironmentVariables["FM27_UI_LANGUAGE"]=System.Globalization.CultureInfo.CurrentUICulture.Name;
         server=new Process{StartInfo=info};server.OutputDataReceived+=(s,e)=>{if(e.Data!=null)lock(output)output.WriteLine(e.Data);};server.ErrorDataReceived+=(s,e)=>{if(e.Data!=null)lock(error)error.WriteLine(e.Data);};server.Start();server.BeginOutputReadLine();server.BeginErrorReadLine();url="http://127.0.0.1:"+port;
-        for(int i=0;i<160;i++){if(server.HasExited)throw new Exception(L("后台启动失败。请查看日志：","Server failed to start. See logs: ")+Path.Combine(dataRoot,"logs"));try{if(ReadUrl(url+"/api/status").Contains("original_native")){File.WriteAllText(Path.Combine(dataRoot,"url.txt"),url);return;}}catch(WebException){}Thread.Sleep(125);}
-        throw new Exception(L("后台启动超时。请查看日志：","Server startup timed out. See logs: ")+Path.Combine(dataRoot,"logs"));
+        for(int i=0;i<160;i++){
+            if(server.HasExited){
+                server.WaitForExit();
+                string code="0x"+unchecked((uint)server.ExitCode).ToString("X8");
+                error.WriteLine("Backend exit code: "+code);
+                throw new Exception(L("后台启动失败，退出码 ","Server failed to start, exit code ")+code+Environment.NewLine+serverErrorPath);
+            }
+            try{if(ReadUrl(url+"/api/status").Contains("original_native")){File.WriteAllText(Path.Combine(dataRoot,"url.txt"),url);return;}}catch(WebException){}
+            Thread.Sleep(125);
+        }
+        error.WriteLine("Backend startup timed out. PID: "+server.Id);
+        throw new Exception(L("后台启动超时。日志文件 ","Server startup timed out. Log file ")+serverErrorPath);
     }
     static void OpenApp(){
         string[] browsers={Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),@"Microsoft\Edge\Application\msedge.exe"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),@"Microsoft\Edge\Application\msedge.exe"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),@"Google\Chrome\Application\chrome.exe")};
@@ -83,7 +102,7 @@ internal static class Program {
                 if(selfTest){foreach(string path in new[]{"/api/catalog","/api/defaults","/api/phase-defaults","/desktop.js","/desktop.css","/engine-settings.js","/save-mode.js","/squad-editor.js","/tactic-pool.js","/tactic-library.js","/api/locale","/i18n.js","/i18n-en.js"})if(ReadUrl(url+path).Length<10)throw new Exception("Empty endpoint: "+path);File.WriteAllText(Path.Combine(dataRoot,"self-test.json"),"{\"ok\":true,\"bundled_python\":true,\"native_match_executed\":false,\"url\":\""+url+"\"}");Stop();return 0;}
                 Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
                 using(var appIcon=Icon.ExtractAssociatedIcon(Application.ExecutablePath))using(var context=new ApplicationContext())using(var tray=new NotifyIcon())using(var menu=new ContextMenuStrip())using(var timer=new System.Windows.Forms.Timer()){
-                    tray.Text=L("FM 战术实验室 · v1113","FM Tactics Lab \u00b7 v1113");tray.Icon=appIcon??SystemIcons.Application;tray.ContextMenuStrip=menu;tray.Visible=!lifecycleTest;
+                    tray.Text=L("FM 战术实验室 · v1113.1","FM Tactics Lab \u00b7 v1113.1");tray.Icon=appIcon??SystemIcons.Application;tray.ContextMenuStrip=menu;tray.Visible=!lifecycleTest;
                     menu.Items.Add(L("打开战术板","Open tactics board"),null,(s,e)=>OpenApp());menu.Items.Add(L("打开结果目录","Open results folder"),null,(s,e)=>Process.Start(new ProcessStartInfo(dataRoot){UseShellExecute=true}));menu.Items.Add(L("退出","Exit"),null,(s,e)=>context.ExitThread());tray.DoubleClick+=(s,e)=>OpenApp();
                     DateTime launched=DateTime.UtcNow;bool seenPage=false;int failedChecks=0;
                     timer.Interval=2000;timer.Tick+=(s,e)=>{
@@ -93,7 +112,14 @@ internal static class Program {
                     };
                     timer.Start();if(!Has(args,"--no-browser"))OpenApp();try{Application.Run(context);}finally{timer.Stop();tray.Visible=false;Stop();}return 0;
                 }
-            }catch(Exception ex){Stop();File.WriteAllText(Path.Combine(dataRoot,"startup-error.txt"),ex.ToString(),Encoding.UTF8);if(!selfTest)MessageBox.Show(ex.Message,L("FM 战术实验室 · v1113","FM Tactics Lab \u00b7 v1113"),MessageBoxButtons.OK,MessageBoxIcon.Error);return 1;}
+            }catch(Exception ex){
+                Stop();
+                string diagnostic=Path.Combine(dataRoot,"startup-error.txt");
+                File.WriteAllText(diagnostic,ex.ToString(),Encoding.UTF8);
+                if(serverErrorPath!=null)File.AppendAllText(serverErrorPath,ex+Environment.NewLine,Encoding.UTF8);
+                if(!selfTest)MessageBox.Show(ex.Message+Environment.NewLine+diagnostic,L("FM 战术实验室 · v1113.1","FM Tactics Lab \u00b7 v1113.1"),MessageBoxButtons.OK,MessageBoxIcon.Error);
+                return 1;
+            }
         }
     }
 }

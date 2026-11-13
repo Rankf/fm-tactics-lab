@@ -7,6 +7,7 @@ function showEngineStatus(status){
  document.querySelector('#engine-path').value=e.selected_game_root||'';
  document.querySelector('#engine-diagnostics').textContent=JSON.stringify({reason:e.reason,diagnostics:e.diagnostics,diagnostic_error:e.diagnostic_error,missing_files:e.missing_files},null,2);
  document.querySelector('#engine-details').open=!e.compatible;
+ if(typeof updateExecutionAvailability==='function')updateExecutionAvailability(status.execution_available===true);
 }
 window.addEventListener('DOMContentLoaded',async()=>{
  try{showEngineStatus(await api('/api/status'));}catch(e){document.querySelector('#engine-summary').textContent='引擎诊断读取失败：'+e.message;}

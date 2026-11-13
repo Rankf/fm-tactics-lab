@@ -47,6 +47,12 @@ EXECUTION_EXPERIMENT_DLLS = {
     '8c6971ce0b1c8afe6529ea3f46205a5175aea988a97d7421a980da42e23fe340',
 }
 EXECUTION_COMPONENTS = ('understanding', 'buy_in', 'opposition', 'ability')
+
+
+def execution_available():
+    return ENGINE_COMPATIBILITY['can_simulate'] and ENGINE_DLL_SHA256 in EXECUTION_EXPERIMENT_DLLS
+
+
 CATALOG = json.loads((WEB/'catalog.json').read_text(encoding='utf8'))
 phase_inputs.annotate(CATALOG)
 CATALOG['setpieces']=setpieces.CATALOG
@@ -249,7 +255,7 @@ def validate_scenario(data):
         values = data['experimental_execution']
         if not isinstance(values, list) or len(values) != 2:
             raise ValueError('请分别设置两队的实验执行力')
-        if ENGINE_DLL_SHA256 not in EXECUTION_EXPERIMENT_DLLS:
+        if not execution_available():
             raise ValueError('当前 FM27 引擎版本尚未验证实验执行力')
         execution = []
         for value in values:
@@ -783,7 +789,7 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/api/catalog':return self.send(CATALOG)
         if path=='/api/defaults':return self.send(DEFAULT)
         if path=='/api/phase-defaults':return self.send(phase_inputs.pack(DEFAULT,CATALOG))
-        if path=='/api/status':return self.send({'engine':'original_native','engine_compatibility':ENGINE_COMPATIBILITY,'server_pid':os.getpid(),'application_version':'v1113','fmf_version_validation':'original_game_reader','fixture_me_version':'26.8.0.0','independent':True,'team_groups':len(GROUPS),'team_options':sum(len(g['options'])for g in GROUPS.values()),'player_groups':17,'roles':79,'batch':{'max_matches_per_variant':10000,**worker_limits(),'isolation':'bounded_reused_native_sessions','jobs_per_native_session':None,'session_policy':'remaining_batch_lane_when_supported','postprocess_workers':2,'whole_match_automatic_retries':0}})
+        if path=='/api/status':return self.send({'engine':'original_native','engine_compatibility':ENGINE_COMPATIBILITY,'server_pid':os.getpid(),'application_version':'v1113.1','execution_available':execution_available(),'fmf_version_validation':'original_game_reader','fixture_me_version':'26.8.0.0','independent':True,'team_groups':len(GROUPS),'team_options':sum(len(g['options'])for g in GROUPS.values()),'player_groups':17,'roles':79,'batch':{'max_matches_per_variant':10000,**worker_limits(),'isolation':'bounded_reused_native_sessions','jobs_per_native_session':None,'session_policy':'remaining_batch_lane_when_supported','postprocess_workers':2,'whole_match_automatic_retries':0}})
         if path=='/api/save/status':
             query=parse_qs(urlparse(self.path).query)
             try: return self.send(SAVE_LIBRARY.status(query.get('id',[None])[0]))
@@ -914,7 +920,7 @@ class Handler(BaseHTTPRequestHandler):
                     ENGINE_COMPATIBILITY=desktop_engine.initialize(ROOT)
                     ENGINE_DLL_SHA256=ENGINE_COMPATIBILITY['actual_dll_sha256']
                     (RUNS.parent/'game-root.txt').write_text(selected,encoding='utf-8-sig')
-                    return self.send(ENGINE_COMPATIBILITY)
+                    return self.send({**ENGINE_COMPATIBILITY,'execution_available':execution_available()})
             if path in ('/api/import-fmf','/api/pool/import-fmf','/api/export-fmf','/api/export-setpiece'):
                 desktop_engine.require_available(ENGINE_COMPATIBILITY)
             if path=='/api/import-fmf':return self.send(import_fmf(data))

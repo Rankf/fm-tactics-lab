@@ -51,6 +51,7 @@ window.FM27English = {
  "对手情报": "Opposition knowledge",
  "球员能力贡献": "Player ability contribution",
  "战术执行力实验": "Tactical execution experiment",
+ "此引擎版本暂不支持战术执行力实验": "The tactical execution experiment is unavailable for this engine build.",
  "手动设置": "Set manually",
  "逐球员自动计算": "Calculated per player",
  "分项": "Component",

@@ -1,5 +1,12 @@
 # Changelog
 
+## v1113.1 · 2026-11-13
+
+- Register the save layout for `27.0.1+2503222`.
+- Record native tactical execution at the original roster identity and report specific verification mismatches.
+- Retain startup diagnostics even if the backend exits without output.
+- Verified with a Manchester United save, 19 same-league opponents and 38 completed native matches with tactical execution enabled.
+
 ## v1113 · 2026-11-13
 
 - Adapt the original-engine host to the FM27 Steam hotfix `27.0.1+2503222`, including its updated initialization address and compatibility checks.

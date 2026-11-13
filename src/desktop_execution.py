@@ -33,32 +33,39 @@ def verify_execution_player(player, policy):
         return False
 
 
-def verify_execution_probe(row, policy, team, side):
+def execution_probe_error(row, policy, team, side):
     if (row.get('side') != side or row.get('policy') != policy
             or row.get('build_calls', 0) <= 0 or row.get('sample_calls', 0) <= 0
             or not row.get('players')):
-        return False
+        return '球队、实验设置或原生采样次数不符'
     seen = set()
     players = team['players']
     for player in row['players']:
         if not verify_execution_player(player, policy):
-            return False
+            return f"球员槽位 {player.get('slot')} 的执行力分项与原生记录不符"
         index = player.get('input_roster_slot')
         if index is None:
             # Unused substitutes may never enter the original builder.
             if player.get('slot', 0) < 11:
-                return False
+                return f"首发槽位 {player.get('slot')} 缺少原生球员身份"
             continue
         if type(index) is not int or not 0 <= index < team.get('roster_size', len(players)) or index in seen:
-            return False
+            return f'球员名单索引 {index} 无效或重复'
         seen.add(index)
         ca = player.get('input_ca')
         if type(ca) is not int or not 0 <= ca <= 200:
-            return False
+            return f'名单索引 {index} 的原生 CA 无效（{ca}）'
         expected = players[index].get('native_profile', {}).get('current_ability')
         if expected is not None and expected != ca:
-            return False
-    return set(team['lineup']).issubset(seen)
+            return f'名单索引 {index} 的原生 CA 为 {ca}，输入为 {expected}'
+    missing = sorted(set(team['lineup']) - seen)
+    if missing:
+        return f'首发名单缺少原生回执（{missing}）'
+    return None
+
+
+def verify_execution_probe(row, policy, team, side):
+    return execution_probe_error(row, policy, team, side) is None
 
 
 def execution_receipts(rows, scenario):
@@ -70,7 +77,8 @@ def execution_receipts(rows, scenario):
     if len(versions) != 1 or versions[0]['after'] != 0x1b000000 or len(probes) != 2:
         raise ValueError('缺少原生实验执行力回执')
     for side, row in enumerate(probes):
-        if not verify_execution_probe(row, scenario['experimental_execution'][side],
-                                      scenario['teams'][side], side):
-            raise ValueError('实验执行力、球员身份或能力贡献未通过原生采样与回读核对')
+        error = execution_probe_error(row, scenario['experimental_execution'][side],
+                                      scenario['teams'][side], side)
+        if error:
+            raise ValueError(f'实验执行力回执不符，{"主队" if side == 0 else "客队"}：{error}')
     return probes

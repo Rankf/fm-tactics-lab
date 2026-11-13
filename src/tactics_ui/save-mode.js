@@ -15,7 +15,8 @@ const executionComponents=[
 executionOptions.innerHTML=`
  <summary>战术执行力实验</summary>
  <p class="tiny muted">分别设置双方的三项分数。球员能力贡献按每名球员的 CA 和两阶段角色适配自动计算。</p>
- <label><input id="execution-enabled" type="checkbox">启用</label>
+ <label><input id="execution-enabled" type="checkbox" disabled>启用</label>
+ <p id="execution-availability" class="tiny muted" hidden>此引擎版本暂不支持战术执行力实验</p>
  <div class="table-scroll"><table>
   <thead><tr><th scope="col">分项</th><th scope="col">己方</th><th scope="col">对方</th></tr></thead>
   <tbody>${executionComponents.map(([key,label,weight])=>`<tr>
@@ -25,6 +26,13 @@ executionOptions.innerHTML=`
   </tr>`).join('')}<tr><th scope="row">球员能力贡献 · 10%</th><td colspan="2">逐球员自动计算</td></tr></tbody>
  </table></div>`;
 modePanel.after(executionOptions);
+function updateExecutionAvailability(available){
+ const enabled=$('#execution-enabled');
+ enabled.disabled=!available;
+ if(!available)enabled.checked=false;
+ $('#execution-availability').hidden=available;
+ enabled.onchange();
+}
 $('#execution-enabled').onchange=()=>{
  for(const input of $$('[data-execution-component]'))input.disabled=!$('#execution-enabled').checked;
 };
